@@ -1,6 +1,7 @@
 module testModule
 
 using Distributed
+using GenGlobal
 
 export testfun, mygemv!, mygemv_minus!, myger!
 
@@ -35,5 +36,7 @@ function myger!(A::AbstractMatrix, alpha::Number, x::AbstractVector, y::Abstract
     size(A,1) == size(A,2) == length(x) == length(y) || throw(DimensionMismatch())
     A .+= alpha .* x .* transpose(y)
 end
+
+@GenGlobal g_v g_sv
 
 end # module end

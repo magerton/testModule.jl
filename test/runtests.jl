@@ -1,30 +1,38 @@
-# using Distributed
-# using testModule
-#
-# pid = addprocs()
-# @everywhere using testModule
-#
-# @show testModule.testfun()
+# detect if using SLURM
+const IN_SLURM = "SLURM_JOBID" in keys(ENV)
 
-using Random
-using LinearAlgebra
+using Distributed
+IN_SLURM && using ClusterManagers
+using SharedArrays
 
-Random.seed!(1234)
+using testModule
 
-x = rand(5,5)
-eyemat = Matrix{Float64}(I,size(x))
+pids = IN_SLURM ? addprocs_slurm(parse(Int, ENV["SLURM_NTASKS"])) : addprocs(NWORKERS)
+@show pids
 
-xinv1 = x \ I
-xinv2 = x \ eyemat
-xinv3 = inv(x)
+println("loading libraries")
+@everywhere begin
+    using testModule
+    size_v() = size.(get_g_v())
+    size_sv() = size.(get_g_sv())
+    getindex_v() = getindex(get_g_v(), 1)
+    getindex_sv() = getindex(get_g_sv(), 1)
+end
 
-inv(x) == inv(lu(x))
-lu(x) \ eyemat == x \ eyemat
+v = rand(5)
+sv = SharedVector(pids, 5)
+sv .= v
 
-@which x \ I
-@which x \ eyemat
-@which inv(x)
+println("setting up data")
+@eval @everywhere begin
+    set_g_v($v)
+    set_g_sv($sv)
+end
 
-xinv1 .- xinv2
-xinv2 .- xinv3
-xinv1 .- xinv3
+println("remotecall_fetching getuvsize")
+for w in pids
+    println(remotecall_fetch(size_v, w))
+    println(remotecall_fetch(size_sv, w))
+    println(remotecall_fetch(getindex_v, w))
+    println(remotecall_fetch(getindex_sv, w))
+end
