@@ -5,7 +5,7 @@ using Random
 
 Random.seed!(1234)
 
-trial_k = 2:10:52
+trial_k = 1:20
 
 # for k in trial_k
 #     y = zeros(Float64, k)
