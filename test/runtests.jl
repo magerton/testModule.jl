@@ -52,17 +52,25 @@ let z = (2.5,2010), ψ = 1.0, geoid = 4.5, roy = 0.25
         e(thet) = flow(problem.extensioncost, thet, myargs...)
         p(thet) = flow(problem,               thet, myargs...)
 
-        @show (d, i, sgnext, Dgt0, r(θ[rng_r]), c(θ[rng_c]), e(θ[rng_e]), p(θ),)
-
+        @show (d, i, r(θ[rng_r]), c(θ[rng_c]), e(θ[rng_e]), p(θ),)
 
         Calculus.finite_difference!(c, θ[rng_c], fdc, :central)
         TestModule.gradient!(problem.drillingcost, θ[rng_c], gc, myargs...)
         @test fdr ≈ gr
 
+        fdpsi = Calculus.derivative((psi) -> flow(problem.revenue, θ[rng_r], σ, wp, i, d, z, psi, geoid, roy), ψ)
+        dpsi = flowdψ(problem.revenue, θ[rng_r], σ, wp, i, d, z, ψ, geoid, roy)
+        @test fdpsi ≈ dpsi
+
+        fdsig = Calculus.derivative((sig) -> flow(problem.revenue, θ[rng_r], sig, wp, i, d, z, ψ, geoid, roy), σ)
+        dsig = flowdσ(problem.revenue, θ[rng_r], σ, wp, i, d, z, ψ, geoid, roy)
+        @test fdsig ≈ dsig
+
+
         test_grad!(problem.revenue,       θ[rng_r], fdr, gr, myargs... )
         test_grad!(problem.drillingcost,  θ[rng_c], fdc, gc, myargs... )
         test_grad!(problem.extensioncost, θ[rng_e], fde, ge, myargs... )
-        # test_grad!(problem,               θ,        fdp, gp, myargs... )
+        test_grad!(problem,               θ,        fdp, gp, myargs... )
     end
 end
 

@@ -2,7 +2,7 @@ module TestModule
 
 import Base: length
 
-export flow
+export flow, flowdθ, flowdσ, flowdψ
 
 # -----------------------------------------
 # need these to run
@@ -21,6 +21,30 @@ _Dgt0(wp,i) = i > 2
 @inline _ρ(θρ::Real) = logistic(θρ)
 @inline _dρdθρ(θρ::Real) = (z = logistic(θρ); z*(1-z) )
 @inline _ρ2(θρ::Real) = _ρ(θρ)^2
+_dρdσ = _dρdθρ # alias
+
+# -----------------------------------------
+# so we can change these...
+# -----------------------------------------
+
+const ref_STARTING_σ_ψ      = Ref{Float64}(0x1.47b9927764a96p-2) # 0x1.baddbb87af68ap-2 # = 0.432
+const ref_STARTING_log_ogip = Ref{Float64}(0x1.6df0926ff0ac4p-1) # 0x1.670bf3d5b282dp-1 # = 0.701
+const ref_STARTING_t        = Ref{Float64}(2*0.042/(2016-2003))
+
+function set_STARTING_σ_ψ(x::Float64)
+    ref_STARTING_σ_ψ[] = x
+end
+function set_STARTING_log_ogip(x::Float64)
+    ref_STARTING_log_ogip[] = x
+end
+function set_STARTING_t(x::Float64)
+    ref_STARTING_t[] = x
+end
+
+STARTING_σ_ψ()      = ref_STARTING_σ_ψ[]
+STARTING_log_ogip() = ref_STARTING_log_ogip[]
+STARTING_t()        = ref_STARTING_t[]
+
 
 # -----------------------------------------
 # big types
@@ -91,9 +115,9 @@ end
 
     # revenue
     k < 0              && throw(DomainError(k))
-    k <= kr            && return flowdθ(x, k,       θ[coef_range_revenue(x)],       σ, wp, i, d, z, ψ, geoid, roy)
-    k <= kr + kc       && return flowdθ(x, k-kr,    θ[coef_range_drillingcost(x)],  σ, wp, i, d, z, ψ, geoid, roy)
-    k <= kr + kc + ke  && return flowdθ(x, k-kr-kc, θ[coef_range_extensioncost(x)], σ, wp, i, d, z, ψ, geoid, roy)
+    k <= kr            && return flowdθ(x.revenue,       k,       θ[coef_range_revenue(x)],       σ, wp, i, d, z, ψ, geoid, roy)
+    k <= kr + kc       && return flowdθ(x.drillingcost,  k-kr,    θ[coef_range_drillingcost(x)],  σ, wp, i, d, z, ψ, geoid, roy)
+    k <= kr + kc + ke  && return flowdθ(x.extensioncost, k-kr-kc, θ[coef_range_extensioncost(x)], σ, wp, i, d, z, ψ, geoid, roy)
     throw(DomainError(k))
 end
 
@@ -101,6 +125,9 @@ end
 # -------------------------------------------
 # Extension
 # -------------------------------------------
+
+@inline flowdσ(::AbstractExtensionCost, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real) where {T} = zero(T)
+@inline flowdψ(::AbstractExtensionCost, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real) where {T} = zero(T)
 
 "No extension cost"
 struct ExtensionCost_Zero <: AbstractExtensionCost end
@@ -119,10 +146,14 @@ struct ExtensionCost_ψ <: AbstractExtensionCost end
 length(::ExtensionCost_ψ) = 2
 @inline flow(  ::ExtensionCost_ψ,             θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real) where {T} = θ[1] + θ[2]*ψ
 @inline flowdθ(::ExtensionCost_ψ, k::Integer, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real) where {T} = k == 1 ? one(T) : ψ
+@inline flowdψ(::ExtensionCost_ψ,             θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real) where {T} = θ[2]
 
 # -------------------------------------------
 # Drilling Cost
 # -------------------------------------------
+
+@inline flowdσ(::AbstractDrillingCost, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real) where {T} = zero(T)
+@inline flowdψ(::AbstractDrillingCost, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real) where {T} = zero(T)
 
 "Single drilling cost"
 struct DrillingCost_constant <: AbstractDrillingCost end
@@ -182,23 +213,22 @@ function Eexpψ(θ4::T, σ::Number, ψ::Number, Dgt0::Bool)::T where {T}
     end
 end
 
+@inline function revenue(θ1::T, θ2::T, θ3::T, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::Real, geoid::Real, roy::Real) where {T}
+    u = d*(one(T)-roy) * exp(θ1 + first(z) + θ2*geoid + Eexpψ(θ3, σ, ψ, _Dgt0(wp,i)))
+    return u::T
+end
+
+@inline function revenue_with_tax(θ1::T, θ2::T, θ3::T, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::Real, geoid::Real, roy::Real) where {T}
+    u = d*ONE_MINUS_MARGINAL_TAX_RATE*(one(T)-roy) * exp(θ1 + θ2*geoid + Eexpψ(θ3, σ, ψ, _Dgt0(wp,i))) * (exp(z[1]) - C_PER_MCF)
+    return u::T
+end
+
+# ----------------------------------------------------------------
+# Drilling revenue
 # ----------------------------------------------------------------
 
 abstract type AbstractUnconstrainedDrillingRevenue <: AbstractDrillingRevenue end
-
-"Revenue with taxes and stuff"
-struct DrillingRevenue_WithTaxes <: AbstractUnconstrainedDrillingRevenue end
-length(x::DrillingRevenue_WithTaxes) = 3
-@inline function flow(x::DrillingRevenue_WithTaxes, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real)::T where {T}
-    return d * ONE_MINUS_MARGINAL_TAX_RATE * (1-roy) * exp(θ[1] + θ[2]*geoid + Eexpψ(θ[3], σ, ψ, _Dgt0(wp,i))) * (exp(z[1]) - C_PER_MCF)
-end
-
-"Simple revenue"
-struct DrillingRevenue <: AbstractUnconstrainedDrillingRevenue end
-length(x::DrillingRevenue) = 3
-@inline function flow(x::DrillingRevenue, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real)::T where {T}
-    return d * (1-roy) * exp(θ[1] + z[1] + θ[2]*geoid + Eexpψ(θ[3], σ, ψ, _Dgt0(wp,i)))
-end
+length(x::AbstractUnconstrainedDrillingRevenue) = 3
 
 @inline function flowdθ(x::AbstractUnconstrainedDrillingRevenue, k::Integer, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real)::T where {T}
     rev = flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy)
@@ -208,18 +238,64 @@ end
     throw(DomainError(k))
 end
 
-@inline function flowdσ(x::AbstractUnconstrainedDrillingRevenue,θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real)::T where {T}
-    return flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy) * (ψ*θ[3] - θ[3]^2*_ρ(σ)) * _dρdσ(σ)
+@inline function flowdσ(x::AbstractUnconstrainedDrillingRevenue, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real)::T where {T}
+    if !_Dgt0(wp,i) && d > 0
+        return flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy) * (ψ*θ[3] - θ[3]^2*_ρ(σ)) * _dρdσ(σ)
+    end
+    return zero(T)
 end
 
 @inline function flowdψ(x::AbstractUnconstrainedDrillingRevenue, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real)::T where {T}
-    return flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy) *  θ[3] * _ρ(σ)
+    if d > 0
+        dψ = flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy) *  θ[3]
+        return _Dgt0(wp,i) ? dψ : dψ * _ρ(σ)
+    end
+    return zero(T)
 end
 
-# @inline net_revdσ(θ, σ, z, ψ, geoid, roy) = net_rev(θ,σ,z,ψ,false,geoid,roy) * (ψ*θ[3] - θ[3]^2*_ρ(σ)) * _dρdσ(σ)
-# @inline net_revdψ(θ, σ, z, ψ, geoid, roy) = net_rev(θ,σ,z,ψ,false,geoid,roy) * θ[3] * _ρ(σ)
+"Revenue with taxes and stuff"
+struct DrillingRevenue_WithTaxes <: AbstractUnconstrainedDrillingRevenue end
+flow(x::DrillingRevenue_WithTaxes, θ::AbstractVector, σ, wp, i, d, z, ψ, geoid, roy) = revenue_with_tax(θ[1], θ[2], θ[3], σ, wp, i, d, z, ψ, geoid, roy)
 
+"Simple revenue"
+struct DrillingRevenue <: AbstractUnconstrainedDrillingRevenue end
+flow(x::DrillingRevenue, θ::AbstractVector, σ, wp, i, d, z, ψ, geoid, roy) = revenue(θ[1], θ[2], θ[3], σ, wp, i, d, z, ψ, geoid, roy)
 
+# ----------------------------------------------------------------
+# Constrained drilling revenue
+# ----------------------------------------------------------------
+
+abstract type AbstractConstrainedDrillingRevenue <: AbstractDrillingRevenue end
+length(x::AbstractConstrainedDrillingRevenue) = 1
+
+@inline function flowdθ(x::AbstractConstrainedDrillingRevenue, k::Integer, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real)::T where {T}
+    rev = flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy)
+    k == 1 && return rev
+    throw(DomainError(k))
+end
+
+@inline function flowdσ(x::AbstractConstrainedDrillingRevenue, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real)::T where {T}
+    if !_Dgt0(wp,i) && d > 0
+        return flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy) * (ψ*STARTING_σ_ψ - STARTING_σ_ψ^2*_ρ(σ)) * _dρdσ(σ)
+    end
+    return zero(T)
+end
+
+@inline function flowdψ(x::AbstractConstrainedDrillingRevenue, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real)::T where {T}
+    if d > 0
+        dψ = flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy) *  STARTING_σ_ψ
+        return _Dgt0(wp,i) ? dψ : dψ * _ρ(σ)
+    end
+    return zero(T)
+end
+
+"Constrained Revenue with taxes and stuff"
+struct ConstrainedDrillingRevenue_WithTaxes <: AbstractConstrainedDrillingRevenue end
+flow(x::ConstrainedDrillingRevenue_WithTaxes, θ::AbstractVector, σ, wp, i, d, z, ψ, geoid, roy) = revenue_with_tax(θ[1], STARTING_log_ogip, STARTING_σ_ψ, σ, wp, i, d, z, ψ, geoid, roy)
+
+"Constrained Simple revenue"
+struct ConstrainedDrillingRevenue <: AbstractConstrainedDrillingRevenue end
+flow(x::ConstrainedDrillingRevenue, θ::AbstractVector, σ, wp, i, d, z, ψ, geoid, roy) = revenue(θ[1], STARTING_log_ogip, STARTING_σ_ψ, σ, wp, i, d, z, ψ, geoid, roy)
 
 
 end
