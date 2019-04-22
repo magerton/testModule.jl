@@ -1,5 +1,7 @@
 module TestModule
 
+using InteractiveUtils: subtypes
+
 import Base: length
 
 export flow, flowdθ, flowdσ, flowdψ
@@ -24,8 +26,18 @@ _Dgt0(wp,i) = i > 2
 _dρdσ = _dρdθρ # alias
 
 # -----------------------------------------
-# so we can change these...
+# so we can change these constants
 # -----------------------------------------
+
+# From Gulen et al (2015) "Production scenarios for the Haynesville..."
+const GATH_COMP_TRTMT_PER_MCF   = 0.42 + 0.07
+const MARGINAL_TAX_RATE = 0.42
+const ONE_MINUS_MARGINAL_TAX_RATE = 1 - MARGINAL_TAX_RATE
+
+# other calculations
+const REAL_DISCOUNT_AND_DECLINE = 0x1.89279c9f3217dp-1   # computed from time FE in monthly pdxn
+const C_PER_MCF = GATH_COMP_TRTMT_PER_MCF * REAL_DISCOUNT_AND_DECLINE
+
 
 const ref_STARTING_σ_ψ      = Ref{Float64}(0x1.47b9927764a96p-2) # 0x1.baddbb87af68ap-2 # = 0.432
 const ref_STARTING_log_ogip = Ref{Float64}(0x1.6df0926ff0ac4p-1) # 0x1.670bf3d5b282dp-1 # = 0.701
@@ -45,10 +57,27 @@ STARTING_σ_ψ()      = ref_STARTING_σ_ψ[]
 STARTING_log_ogip() = ref_STARTING_log_ogip[]
 STARTING_t()        = ref_STARTING_t[]
 
+# chebshev polynomials
+# See http://www.aip.de/groups/soe/local/numres/bookcpdf/c5-8.pdf
+@inline checkinterval(x::Real,min::Real,max::Real) =  min <= x <= max || throw(DomainError("x = $x must be in [$min,$max]"))
+@inline checkinterval(x::Real) = checkinterval(x,-1,1)
+
+@inline cheb0(z::Real) = (x = clamp(z,-1,1); return one(eltype(z)))
+@inline cheb1(z::Real) = (x = clamp(z,-1,1); return x)
+@inline cheb2(z::Real) = (x = clamp(z,-1,1); return 2*x^2 - 1)
+@inline cheb3(z::Real) = (x = clamp(z,-1,1); return 4*x^3 - 3*x)
+@inline cheb4(z::Real) = (x = clamp(z,-1,1); return 8*(x^4 - x^2) + 1)
 
 # -----------------------------------------
 # big types
 # -----------------------------------------
+
+function showtypetree(T, level=0)
+    println("\t" ^ level, T)
+    for t in subtypes(T)
+        showtypetree(t, level+1)
+   end
+end
 
 # Static Payoff
 abstract type AbstractPayoffFunction end
@@ -70,8 +99,13 @@ struct StaticDrillingPayoff{R<:AbstractDrillingRevenue,C<:AbstractDrillingCost,E
     extensioncost::E
 end
 
+revenue(x::StaticDrillingPayoff) = x.revenue
+drillingcost(x::StaticDrillingPayoff) = x.drillingcost
+extensioncost(x::StaticDrillingPayoff) = x.extensioncost
+
 @inline length(x::StaticDrillingPayoff) = length(x.revenue) + length(x.drillingcost) + length(x.extensioncost)
 @inline lengths(x::StaticDrillingPayoff) = (length(x.revenue), length(x.drillingcost), length(x.extensioncost),)
+@inline number_of_model_parms(x::StaticDrillingPayoff) = length(x)
 
 # coeficient ranges
 @inline coef_range_revenue(x::StaticDrillingPayoff) =                                                        1:length(x.revenue)
@@ -80,6 +114,11 @@ end
 @inline coef_ranges(x::StaticDrillingPayoff) = coef_range_revenue(x), coef_range_drillingcost(x), coef_range_extensioncost(x)
 
 @inline check_coef_length(x::StaticDrillingPayoff, θ) = length(x) == length(θ) || throw(DimensionMismatch())
+
+ConstrainedProblem(  x::AbstractPayoffComponent) = x
+UnconstrainedProblem(x::AbstractPayoffComponent) = x
+ConstrainedProblem(  x::StaticDrillingPayoff) = StaticDrillingPayoff(ConstrainedProblem(revenue(x)), ConstrainedProblem(drillingcost(x)), ConstrainedProblem(extensioncost(x)))
+UnconstrainedProblem(x::StaticDrillingPayoff) = StaticDrillingPayoff(UnconstrainedProblem(revenue(x)), UnconstrainedProblem(drillingcost(x)), UnconstrainedProblem(extensioncost(x)))
 
 # flow???(
 #     x::AbstractStaticPayoffs, k::Integer,             # which function
@@ -121,6 +160,19 @@ end
     throw(DomainError(k))
 end
 
+@inline function flowdψ(x::StaticDrillingPayoff, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, args...)::T where {T}
+    d == 0 && return flowdψ(x.extensioncost, θ, σ, wp, i, d, args...)
+    r = flowdψ(x.revenue,       θ, σ, wp, i, d, args...)
+    c = flowdψ(x.drillingcost,  θ, σ, wp, i, d, args...)
+    return r+c
+end
+
+@inline function flowdσ(x::StaticDrillingPayoff, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, args...)::T where {T}
+    d == 0 && return flowdσ(x.extensioncost, θ, σ, wp, i, d, args...)
+    r = flowdσ(x.revenue,       θ, σ, wp, i, d, args...)
+    c = flowdσ(x.drillingcost,  θ, σ, wp, i, d, args...)
+    return r+c
+end
 
 # -------------------------------------------
 # Extension
@@ -178,6 +230,14 @@ end
     d  > 1 && return d*(θ[time_idx(u,last(z))] + θ[length(u)])
     d  < 1 && return zero(T)
 end
+@inline function flowdθ(u::DrillingCost_TimeFE, k::Integer, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple{T,<:Integer}, ψ::T, geoid::Real, roy::Real)::T where {T}
+    if 0 < k <= length(u)-1
+        return k == time_idx(u,last(z)) ? T(d) : zero(T)
+    end
+    k <= length(u) && return d <= 1 ? zero(T) : T(d)
+    throw(DomainError(k))
+end
+
 
 "Time FE w rig rates for 2008-2012"
 struct DrillingCost_TimeFE_rigrate <: AbstractDrillingCost_TimeFE
@@ -190,19 +250,19 @@ end
     d  > 1 && return d*( θ[time_idx(u,last(z))] + θ[length(u)-1] + θ[length(u)]*exp(z[2]) )
     d  < 1 && return zero(T)
 end
+@inline function flowdθ(u::DrillingCost_TimeFE_rigrate, k::Integer, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple{T,<:Integer}, ψ::T, geoid::Real, roy::Real)::T where {T}
+    K = length(u)
+    if 0 < k <= K-2
+        return k == time_idx(u,last(z)) ? T(d) : zero(T)
+    end
+    k == K-1 && return d <= 1 ? zero(T) : T(d)
+    k <= K   && return d == 0 ? zero(T) : d*exp(z[2])
+    throw(DomainError(k))
+end
 
 # -------------------------------------------
 # Revenue
 # -------------------------------------------
-
-# From Gulen et al (2015) "Production scenarios for the Haynesville..."
-const GATH_COMP_TRTMT_PER_MCF   = 0.42 + 0.07
-const MARGINAL_TAX_RATE = 0.42
-const ONE_MINUS_MARGINAL_TAX_RATE = 1 - MARGINAL_TAX_RATE
-
-# other calculations
-const REAL_DISCOUNT_AND_DECLINE = 0x1.89279c9f3217dp-1   # computed from time FE in monthly pdxn
-const C_PER_MCF = GATH_COMP_TRTMT_PER_MCF * REAL_DISCOUNT_AND_DECLINE
 
 function Eexpψ(θ4::T, σ::Number, ψ::Number, Dgt0::Bool)::T where {T}
     if Dgt0
@@ -276,14 +336,14 @@ end
 
 @inline function flowdσ(x::AbstractConstrainedDrillingRevenue, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real)::T where {T}
     if !_Dgt0(wp,i) && d > 0
-        return flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy) * (ψ*STARTING_σ_ψ - STARTING_σ_ψ^2*_ρ(σ)) * _dρdσ(σ)
+        return flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy) * (ψ*STARTING_σ_ψ() - STARTING_σ_ψ()^2*_ρ(σ)) * _dρdσ(σ)
     end
     return zero(T)
 end
 
 @inline function flowdψ(x::AbstractConstrainedDrillingRevenue, θ::AbstractVector{T}, σ::T, wp::AbstractUnitProblem, i::Integer, d::Integer, z::Tuple, ψ::T, geoid::Real, roy::Real)::T where {T}
     if d > 0
-        dψ = flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy) *  STARTING_σ_ψ
+        dψ = flow(x, θ, σ, wp, i, d, z, ψ, geoid, roy) *  STARTING_σ_ψ()
         return _Dgt0(wp,i) ? dψ : dψ * _ρ(σ)
     end
     return zero(T)
@@ -291,11 +351,17 @@ end
 
 "Constrained Revenue with taxes and stuff"
 struct ConstrainedDrillingRevenue_WithTaxes <: AbstractConstrainedDrillingRevenue end
-flow(x::ConstrainedDrillingRevenue_WithTaxes, θ::AbstractVector, σ, wp, i, d, z, ψ, geoid, roy) = revenue_with_tax(θ[1], STARTING_log_ogip, STARTING_σ_ψ, σ, wp, i, d, z, ψ, geoid, roy)
+flow(x::ConstrainedDrillingRevenue_WithTaxes, θ::AbstractVector, σ, wp, i, d, z, ψ, geoid, roy) = revenue_with_tax(θ[1], STARTING_log_ogip(), STARTING_σ_ψ(), σ, wp, i, d, z, ψ, geoid, roy)
 
 "Constrained Simple revenue"
 struct ConstrainedDrillingRevenue <: AbstractConstrainedDrillingRevenue end
-flow(x::ConstrainedDrillingRevenue, θ::AbstractVector, σ, wp, i, d, z, ψ, geoid, roy) = revenue(θ[1], STARTING_log_ogip, STARTING_σ_ψ, σ, wp, i, d, z, ψ, geoid, roy)
+flow(x::ConstrainedDrillingRevenue, θ::AbstractVector, σ, wp, i, d, z, ψ, geoid, roy) = revenue(θ[1], STARTING_log_ogip(), STARTING_σ_ψ(), σ, wp, i, d, z, ψ, geoid, roy)
+
+
+UnconstrainedProblem(::ConstrainedDrillingRevenue_WithTaxes) = DrillingRevenue_WithTaxes()
+UnconstrainedProblem(::ConstrainedDrillingRevenue) = DrillingRevenue()
+ConstrainedProblem(::DrillingRevenue_WithTaxes) = ConstrainedDrillingRevenue_WithTaxes()
+ConstrainedProblem(::DrillingRevenue          ) = ConstrainedDrillingRevenue()
 
 
 end

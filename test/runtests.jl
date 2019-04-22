@@ -16,61 +16,57 @@ wp = TestModule.unitProblem()
 TestModule.check_coef_length(problem, θ)
 
 
+TestModule.showtypetree(TestModule.AbstractPayoffFunction)
 
+println("")
 
+types_to_test = (
+    # map((x) -> x(2008,2012), subtypes(TestModule.AbstractDrillingCost_TimeFE))...,
+    TestModule.DrillingCost_TimeFE(2008,2012),
+    TestModule.DrillingCost_TimeFE(2009,2011),
+    TestModule.DrillingCost_constant(),
+    TestModule.DrillingRevenue_WithTaxes(),
+    TestModule.DrillingRevenue(),
+    TestModule.ConstrainedDrillingRevenue_WithTaxes(),
+    TestModule.ConstrainedDrillingRevenue_WithTaxes(),
+    TestModule.ExtensionCost_Zero(),
+    TestModule.ExtensionCost_Constant(),
+    TestModule.ExtensionCost_ψ(),
+    TestModule.StaticDrillingPayoff(TestModule.DrillingRevenue(),TestModule.DrillingCost_TimeFE(2009,2011),TestModule.ExtensionCost_Constant()),
+    TestModule.UnconstrainedProblem(TestModule.StaticDrillingPayoff(TestModule.DrillingRevenue(),TestModule.DrillingCost_TimeFE(2009,2011),TestModule.ExtensionCost_Constant()) ),
+    TestModule.ConstrainedProblem(TestModule.StaticDrillingPayoff(TestModule.DrillingRevenue(),TestModule.DrillingCost_TimeFE(2009,2011),TestModule.ExtensionCost_Constant()) ),
+)
 
-function test_grad!(f::TestModule.AbstractPayoffFunction, thet::AbstractVector, fd::AbstractVector, g::AbstractVector, myargs... )
-    f_for_fd(x) = flow(f, x, myargs...)
-    Calculus.finite_difference!(f_for_fd, thet, fd, :central)
-    TestModule.gradient!(f, thet, g, myargs...)
-    @test fd ≈ g
-end
+for f in types_to_test
+    println("Testing fct $f")
+    let z = (2.5,2010), ψ = 1.0, geoid = 4.5, roy = 0.25
 
+        n = length(f)
+        θ0 = rand(n)
+        fd = zeros(Float64, n)
+        g = zeros(Float64, n)
 
+        for (d,i) in Iterators.product(0:2, 1:3)
+            sgnext = TestModule._sgnext(wp,i)
+            myargs = σ, wp, i, d, z, ψ, geoid, roy
 
+            fct(thet) = flow(f, thet, myargs...)
 
-let z = (2.5,2010), ψ = 1.0, geoid = 4.5, roy = 0.25
-    rng_r, rng_c, rng_e = TestModule.coef_ranges(problem)
+            # test ∂f/∂θ
+            Calculus.finite_difference!(fct, θ0, fd, :central)
+            TestModule.gradient!(f, θ0, g, myargs...)
+            @test g ≈ fd
 
-    fdr = zeros(Float64, length(rng_r))
-    fdc = zeros(Float64, length(rng_c))
-    fde = zeros(Float64, length(rng_e))
-    fdp = zeros(Float64, length(problem))
+            # test ∂f/∂ψ
+            fdpsi = Calculus.derivative((psi) -> flow(f, θ0, σ, wp, i, d, z, psi, geoid, roy), ψ)
+            gpsi = flowdψ(f, θ0, σ, wp, i, d, z, ψ, geoid, roy)
+            @test fdpsi ≈ gpsi
 
-    gr = zeros(Float64, length(rng_r))
-    gc = zeros(Float64, length(rng_c))
-    ge = zeros(Float64, length(rng_e))
-    gp = zeros(Float64, length(problem))
-
-    for (d,i) in Iterators.product(0:2, 1:3)
-        sgnext = TestModule._sgnext(wp,i)
-        Dgt0 = TestModule._Dgt0(wp,i)
-        myargs = σ, wp, i, d, z, ψ, geoid, roy
-
-        r(thet) = flow(problem.revenue,       thet, myargs...)
-        c(thet) = flow(problem.drillingcost,  thet, myargs...)
-        e(thet) = flow(problem.extensioncost, thet, myargs...)
-        p(thet) = flow(problem,               thet, myargs...)
-
-        @show (d, i, r(θ[rng_r]), c(θ[rng_c]), e(θ[rng_e]), p(θ),)
-
-        Calculus.finite_difference!(c, θ[rng_c], fdc, :central)
-        TestModule.gradient!(problem.drillingcost, θ[rng_c], gc, myargs...)
-        @test fdr ≈ gr
-
-        fdpsi = Calculus.derivative((psi) -> flow(problem.revenue, θ[rng_r], σ, wp, i, d, z, psi, geoid, roy), ψ)
-        dpsi = flowdψ(problem.revenue, θ[rng_r], σ, wp, i, d, z, ψ, geoid, roy)
-        @test fdpsi ≈ dpsi
-
-        fdsig = Calculus.derivative((sig) -> flow(problem.revenue, θ[rng_r], sig, wp, i, d, z, ψ, geoid, roy), σ)
-        dsig = flowdσ(problem.revenue, θ[rng_r], σ, wp, i, d, z, ψ, geoid, roy)
-        @test fdsig ≈ dsig
-
-
-        test_grad!(problem.revenue,       θ[rng_r], fdr, gr, myargs... )
-        test_grad!(problem.drillingcost,  θ[rng_c], fdc, gc, myargs... )
-        test_grad!(problem.extensioncost, θ[rng_e], fde, ge, myargs... )
-        test_grad!(problem,               θ,        fdp, gp, myargs... )
+            # test ∂f/∂σ
+            fdsig = Calculus.derivative((sig) -> flow(f, θ0, sig, wp, i, d, z, ψ, geoid, roy), σ)
+            gsig = flowdσ(f, θ0, σ, wp, i, d, z, ψ, geoid, roy)
+            @test fdsig ≈ gsig
+        end
     end
 end
 
