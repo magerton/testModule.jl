@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "..\\ShaleDrillingRevisedModel"
+		},
+		{
+			"path": "..\\NewTestModule"
+		}
+	],
+	"settings": {
+		"julia.environmentPath": "d:\\libraries\\julia\\dev\\TestModule"
+	}
+}
