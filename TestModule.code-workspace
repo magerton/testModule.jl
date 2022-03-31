@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "..\\NewTestModule"
+		},
+		{
+			"path": "..\\ShaleDrillingLikelihood"
 		}
 	],
 	"settings": {

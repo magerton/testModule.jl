@@ -28,13 +28,16 @@ nparm(::NoModel) = 0
 # "What we feed into a likelihood"
 # "Group of observations"
 abstract type AbstractDataStructure end
-abstract type AbstractTmpVars{R<:Real} end
-
+abstract type AbstractTmpVars{R} end # note, we can't place limits on R<:Real
 eltype(::AbstractTmpVars{R}) where {R} = R
+(::Type{T})(x::T) where {T<:AbstractTmpVars} = x
+
 
 # these hold data
 "holds AbstractData + associated tmpvar"
 abstract type AbstractDataSetWithTmpvar <: AbstractDataStructure end
+eltype(x::AbstractDataSetWithTmpvar) = eltype(tmpvar(x))
+
 abstract type AbstractData              <: AbstractDataStructure end
 
 abstract type AbstractDataSetofSets     <: AbstractData end

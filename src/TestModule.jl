@@ -19,6 +19,7 @@ struct DataWithTmpVar{D<:AbstractData, V<:AbstractTmpVars} <: AbstractDataSetWit
     tmpvar::V
 end
 
+
 data(  d::DataWithTmpVar) = d.data
 tmpvar(d::DataWithTmpVar) = d.tmpvar
 DataWithTmpVar(d, θ) = DataWithTmpVar(d, tmpvar(d, θ))
@@ -136,10 +137,10 @@ obslength(g::AbstractObservationGroup, k) = obslength(data(g), getindex(groupran
 
 export DataTest, ObservationTest
 
-struct ObservationTest{M<:NoModel, V<:AbstractVector} <: AbstractObservation
+struct ObservationTest{M<:NoModel, YT,XT} <: AbstractObservation
     model::M
-    y::Float64
-    x::V
+    y::YT
+    x::XT
 end
 
 struct DataTest{M<:NoModel} <: AbstractDataSet
@@ -150,7 +151,7 @@ end
 
 DataTest(y,x) = DataTest(NoModel(), y, x)
 
-function Observation(d::DataTest, i::Integer)
+function Observation(d, i)
     yi     = getindex(y(d), i)
     xi     = view(x(d), :, i)
     return ObservationTest(model(d), yi, xi)
@@ -159,26 +160,51 @@ end
 struct TmpVarTest{R} <: AbstractTmpVars{R}
     xbeta::Vector{R}
 end
+xbeta(t::TmpVarTest) = t.xbeta
+getindex(t::TmpVarTest, i) = getindex(xbeta(t), i)
+
 
 length(d::DataTest) = length(y(d))
 group_ptr(d::DataTest) = OneTo(length(d))
 obs_ptr(  d::DataTest) = OneTo(length(d))
 getindex(d::DataTest, i) = Observation(d, i)
 
-tmpvar(d::DataTest) = TmpVarTest(similar(y(d)))
+tmpvar(d::AbstractData, theta=eltype(y(d))) = TmpVarTest(similar(y(d), eltype(theta)))
+DataWithTmpVar(d::AbstractData, args...) = DataWithTmpVar(d, tmpvar(d, args...))
+
+
+
+
+export GroupedDataTest, GroupedObservationTest
+
+struct GroupedObservationTest{M<:NoModel, V<:AbstractVector} <: AbstractObservation
+    model::M
+    y::Float64
+    x::V
+end
+
+struct GroupedDataTest{M<:NoModel} <: AbstractDataSet
+    model::M
+    y::Vector{Float64}
+    x::Matrix{Float64}
+    group_ptr::Vector{Int}
+    obs_ptr::Vector{Int}
+end
+
+GroupedDataTest(y,x, grp_ptr, obs_ptr) = GroupedDataTest(NoModel(), y, x, grp_ptr, obs_ptr)
+
+function Observation(d::GroupedDataTest, j::Integer)
+    trng = obsrange(d, j)
+    yi   = getindex(y(d), trng)
+    xi   = view(x(d), :, trng)
+    return ObservationTest(model(d), yi, xi)
+end
+
+getindex(g::ObservationGroup{<:GroupedDataTest}, k) = Observation(data(g), grouprange(g)[k])
+
+
+tmpvar(d::DataTest, θ) = TmpVarTest(similar(y(d)))
 DataWithTmpVar(d::DataTest) = DataWithTmpVar(d, tmpvar(d))
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
