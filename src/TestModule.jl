@@ -3,22 +3,13 @@ module TestModule
 # extend these methods
 import Base: length, size, iterate,
     firstindex, lastindex, eachindex, getindex, IndexStyle,
-    view, ==, eltype, +, -, isless,
-    fill!,string, show, convert, eltype,
-    step
+    view, ==, eltype
 
 using Base: OneTo
 
 abstract type AbstractDataObject end
-
 abstract type AbstractTmpVar{R} <: AbstractDataObject end
-(::Type{T})(x::AbstractTmpVar) where {T<:AbstractTmpVar} = x
-
 abstract type AbstractData       <: AbstractDataObject end
-getindex(d::AbstractData,i) = ObservationGroup(d,i)
-
-
-
 abstract type AbstractDataSet           <: AbstractData end
 abstract type AbstractObservationGroup  <: AbstractData end
 abstract type AbstractObservation       <: AbstractData end
@@ -38,16 +29,6 @@ struct Observation{YT,XT} <: AbstractObservation
     x::XT
 end
 
-y(d::AbstractData) = d.y
-x(d::AbstractData) = d.x
-
-ptr(   d::AbstractDataSet) = d.ptr
-length(d::AbstractDataSet)  = length(ptr(d))
-
-data(x::AbstractObservationGroup) = x.data
-idx( x::AbstractObservationGroup) = x.idx
-
-
 struct DataSingle <: AbstractDataSet
     y::Vector{Float64}
     x::Matrix{Float64}
@@ -59,8 +40,6 @@ struct DataSingle <: AbstractDataSet
         return new(y,x,ptr)
     end
 end
-
-ptr(d::DataSingle) = OneTo(length(y(d)))
 
 struct DataMult <: AbstractDataSet
     y::Vector{Float64}
@@ -75,20 +54,49 @@ struct DataMult <: AbstractDataSet
     end
 end
 
+struct TmpVar{R} <: AbstractTmpVar
+    xbeta::Vector{R}
+end 
 
+(::Type{T})(x::AbstractTmpVar) where {T<:AbstractTmpVar} = x
 
-function Observation(d::DataSingle, i) 
-    yi = getindex(y(d), i)
+getindex(d::AbstractData,i) = ObservationGroup(d,i)
+
+y(d::AbstractData) = d.y
+x(d::AbstractData) = d.x
+
+ptr(d::AbstractDataSet) = d.ptr
+ptr(d::DataSingle) = OneTo(length(y(d)))
+length(d::AbstractDataSet)  = length(ptr(d))
+
+data(x::AbstractObservationGroup) = x.data
+idx( x::AbstractObservationGroup) = x.idx
+
+getyi(d::DataSingle,i) = getindex(y(d), i)
+getyi(d::DataMult,i)   = view(    y(d), i)
+
+function Observation(d::AbstractDataSet, i) 
+    yi = getyi(d, i)
     xi = view(x(d), :, i)
     return Observation(yi, xi)
 end
 
-function Observation(d::Datamult, i) 
-    yi = view(y(d), i)
-    xi = view(x(d), :, i)
-    return Observation(yi, xi)
+function TmpVar(d::AbstractDataSet, θ)
+    n = length(y(d))
+    R = eltype(θ)
+    xbeta = Vector{R}(undef, n)
+    return TmpVar(xbeta)
 end
 
+getindex(d::TmpVar, i::Integer) = getindex(xbeta(d), i)
+getindex(d::TmpVar, i::AbstractVector) = view(xbeta(d), i)
+
+function TmpVar(d::AbstractObservationGroup)
+    dtv = data(d)
+    i = idx(d)
+    tmpv = tmpvar(dtv)
+    return tmpv[i]
+end
 
 
 end # module
