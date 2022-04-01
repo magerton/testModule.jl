@@ -68,18 +68,36 @@ x(d::AbstractData) = d.x
 ptr(d::AbstractDataSet) = d.ptr
 ptr(d::DataSingle) = OneTo(length(y(d)))
 length(d::AbstractDataSet)  = length(ptr(d))
+length(o::Observation) = length(y(o))
 
 data(x::AbstractObservationGroup) = x.data
 idx( x::AbstractObservationGroup) = x.idx
 
-getyi(d::DataSingle,i) = getindex(y(d), i)
-getyi(d::DataMult,i)   = view(    y(d), i)
+getorview(d::DataSingle,i) = getindex(y(d), i)
+getorview(d::DataMult,i)   = view(    y(d), i)
 
+"spits out data for observation `i`, be it length 1 or length n"
 function Observation(d::AbstractDataSet, i) 
-    yi = getyi(d, i)
+    yi = getorview(d, i)
     xi = view(x(d), :, i)
     return Observation(yi, xi)
 end
+
+"retrieves "
+function Observation(obsgrp::ObservationGroup{<:AbstractDataSet}) 
+    d = data(obsgrp)
+    i = index(obsgrp)
+    return Observation(d, i) 
+end
+
+function Observation(obsgrp::ObservationGroup{<:DataWithTmpVar}) 
+    dtv = data(obsgrp)
+    i = index(obsgrp)
+    tv  = TmpVar(obsgrp)
+    obs = Observation(data(dtv), i)
+    return DataWithTmpVar(tv, obs)
+end
+
 
 function TmpVar(d::AbstractDataSet, θ)
     n = length(y(d))
@@ -88,14 +106,14 @@ function TmpVar(d::AbstractDataSet, θ)
     return TmpVar(xbeta)
 end
 
-getindex(d::TmpVar, i::Integer) = getindex(xbeta(d), i)
-getindex(d::TmpVar, i::AbstractVector) = view(xbeta(d), i)
+getorview(d::TmpVar, i::Integer) = getindex(xbeta(d), i)
+getorview(d::TmpVar, i::AbstractVector) = view(xbeta(d), i)
 
 function TmpVar(d::AbstractObservationGroup)
     dtv = data(d)
     i = idx(d)
     tmpv = tmpvar(dtv)
-    return tmpv[i]
+    return getorview(tmpv, i)
 end
 
 
