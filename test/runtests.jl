@@ -11,13 +11,16 @@ using TestModule
 using TestModule: tmpvar, y, x,
     obsrange, grouprange,
     group_ptr, obs_ptr,
-    TmpVarTest
+    TmpVarTest,
+    xbeta
 
-@testset "DataTest" begin k,n = 2,4
+# @testset "DataTest" begin
+    k,n = 2,4
     d = DataTest(rand(n), rand(k,n))
 
     for (i,o) in enumerate(d)
-        println(i, o)
+        @test o isa  AbstractObservation
+        @test isa(o, AbstractObservationGroup) == false
     end
 
     @test size(tmpvar(d).xbeta) == size(y(d))
@@ -29,9 +32,9 @@ using TestModule: tmpvar, y, x,
     end
 
     println(typeof(tmpvar(d)))
-end
+# end
 
-@testset "GroupedDataTest" begin
+# @testset "GroupedDataTest" begin
     gptr = [1, 2, 2, 7]
     tptr = [1, 2, 2, 5, 8, 9, 11]
     n = last(tptr)-1
@@ -67,7 +70,18 @@ end
     @test tmpvar(dtv) === TmpVarTest(tmpv)
     @test tmpvar(dtv) === TmpVarTest(tmpvar(dtv))
 
-end
+    @test getindex(tmpv, 1) == xbeta(tmpv)[1]
 
+    # for (i, gt) in enumerate(dtv)
+    #     @test tmpvar(gt) === tmpvar(dtv)
+        # @test getindex(dtv, i) == ObservationGroup(dtv,i)
+    # end
+
+# end
+
+jb = JnkBase{2,Int}(1)
+jg1 = JnkGroup(jb,1)
+jg2 = JnkGroup(jg1)
+jg3 = JnkGroup(jg2)
 
 # end # module
