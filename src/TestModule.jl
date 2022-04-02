@@ -46,45 +46,40 @@ end
 # struct ScalarOutcome end
 # struct VectorOutcome end
 
-"An Observation/ObsGroup is just a scalar"
-struct DataScalar <: AbstractData
-    y::Vector{Float64}
-    x::Matrix{Float64}
-    function DataScalar(y,x)
-        k,n = size(x)
-        n == length(y)
-        return new(y,x)
+abstract type DataSetType end
+
+struct Data{T::DataSetType,Y::Vector,X::Matrix,P::AbstractVector} <: AbstractData
+    typ::T
+    y::Y
+    x::X
+    ptr::P
+end
+
+ptrrange(og::ObservationGroup) = 
+
+obsgrp(x,i) = (data(x), (idx(x), i))
+getindex(x,i) = obsgrp(x,i)
+
+
+for (i,unit) in dataroy  # i is 1:numy... ptr is 1:numy
+    for t in idx(unit)   # idx = i:(i+1)-1
+        Observation(dataroy,t)
+        tmpvar(unit, t) # is tmpvar[t]
     end
 end
 
+for (i,unit) in datapdxn # i is 1:numy
+    Observation(datapdxn, idx(unit)) # idx is ptr[i] : ptr[i+1]-1
+    tmpvar(unit, idx(unit))  # is tmpvar[idx]
+end
 
-"An Observation/ObsGroup is a vector"
-struct DataVector <: AbstractData
-    y::Vector{Float64}
-    x::Matrix{Float64}
-    ptr::Vector{Int}
-    function DataVector(y,x,ptr)
-        k,n = size(x)
-        n == length(y)   || throw(DimensionMismatch())
-        first(ptr) == 1  || throw(error())
-        last(ptr)-1 == n || throw(error())
-        return new(y,x,ptr)
+for (i,unit) in datadrill  # i is 1:numy
+    for t in idx(unit)     # idx is ptr[i] : ptr[i+1]-1
+        Observation(datadrill,t)
+        tmpvar(unit, t)   # is just tmpvar 
     end
 end
 
-"An ObsGroup is a vector... but we have to go over Observations as scalars"
-struct DataVectorByScalar <: AbstractData
-    y::Vector{Float64}
-    x::Matrix{Float64}
-    ptr::Vector{Int}
-    function DataVectorByScalar(y,x,ptr)
-        k,n = size(x)
-        n == length(y)   || throw(DimensionMismatch())
-        first(ptr) == 1  || throw(error())
-        last(ptr)-1 == n || throw(error())
-        return new(y,x,ptr)
-    end
-end
 
 const DataOrObs = Union{AbstractData, AbstractObservation}
 
