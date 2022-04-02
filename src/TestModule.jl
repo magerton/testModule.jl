@@ -8,49 +8,49 @@ import Base: length, size, iterate,
 using Base: OneTo
 
 abstract type AbstractDataObject end
-abstract type AbstractTmpVar{R} <: AbstractDataObject end
-abstract type AbstractData       <: AbstractDataObject end
-abstract type AbstractDataSet           <: AbstractData end
-abstract type AbstractObservationGroup  <: AbstractData end
-abstract type AbstractObservation       <: AbstractData end
+abstract type AbstractTmpVar{R}         <: AbstractDataObject end
+abstract type AbstractData              <: AbstractDataObject end
+abstract type AbstractObservation       <: AbstractDataObject end
 
 """
 we give a liklihood evaluation a DataSet/ObsGroup/Observation
 object with a `AbstractTmpVar`
 """
-struct DataWithTmpVar{D<:AbstractData, T<:AbstractTmpVar} <: AbstractData
+struct DataWithTmpVar{D<:AbstractData, T<:AbstractTmpVar} <: AbstractDataObject
     data::D
     tmpvar::T
 end
 
 "wrap a DataSet/DataWithTmpVar/ObsGroup/Observation with an index"
-struct ObservationGroup{D,I} <: AbstractObservationGroup
+struct ObservationGroup{D,I} <: AbstractDataObject
     data::D
     idx::I
 end
 
 "Observation we use inside a likelihood"
-struct Observation{YT,XT} <: AbstractObservation
+struct Observation{YT,XT,T} <: AbstractObservation
     y::YT
     x::XT
+    tmpvar::T
 end
 
-struct TmpVar{R} <: AbstractTmpVar
+struct NoTmpVar{R} <: AbstractTmpVar{R}
+    NoTmpVar() = new{Nothing}()
+end
+
+struct TmpVar{R} <: AbstractTmpVar{R}
     xbeta::Vector{R}
 end 
 
-abstract type AbstractObservationType end
-struct ScalarObs end
-struct VectorObs end
-
-"default to scalar"
-obstype(::AbstractDataSet) = ScalarObs()
+# abstract type AbstractOutcomeType end
+# struct ScalarOutcome end
+# struct VectorOutcome end
 
 "An Observation/ObsGroup is just a scalar"
-struct DataScalar <: AbstractDataSet
+struct DataScalar <: AbstractData
     y::Vector{Float64}
     x::Matrix{Float64}
-    function DataSingle(y,x)
+    function DataScalar(y,x)
         k,n = size(x)
         n == length(y)
         return new(y,x)
@@ -59,76 +59,62 @@ end
 
 
 "An Observation/ObsGroup is a vector"
-struct DataVector <: AbstractDataSet
+struct DataVector <: AbstractData
     y::Vector{Float64}
     x::Matrix{Float64}
     ptr::Vector{Int}
-    function DataMult(y,x,ptr)
+    function DataVector(y,x,ptr)
         k,n = size(x)
-        n == length(y) == length(ptr) || throw(DimensionMismatch())
-        first(ptr) == 1 || throw(error())
+        n == length(y)   || throw(DimensionMismatch())
+        first(ptr) == 1  || throw(error())
         last(ptr)-1 == n || throw(error())
         return new(y,x,ptr)
     end
 end
-
-obstype(::DataVector) = VectorObs()
 
 "An ObsGroup is a vector... but we have to go over Observations as scalars"
-struct DataVectorByScalar <: AbstractDataSet
+struct DataVectorByScalar <: AbstractData
     y::Vector{Float64}
     x::Matrix{Float64}
     ptr::Vector{Int}
-    function DataDrill(y,x,ptr)
+    function DataVectorByScalar(y,x,ptr)
         k,n = size(x)
-        n == length(y) == length(ptr) || throw(DimensionMismatch())
-        first(ptr) == 1 || throw(error())
+        n == length(y)   || throw(DimensionMismatch())
+        first(ptr) == 1  || throw(error())
         last(ptr)-1 == n || throw(error())
         return new(y,x,ptr)
     end
 end
 
-y(d::AbstractData) = d.y
-x(d::AbstractData) = d.x
+const DataOrObs = Union{AbstractData, AbstractObservation}
+
+data(d::DataOrObs) = d
+y(d::DataOrObs) = d.y
+x(d::DataOrObs) = d.x
+
+data(d::AbstractDataObject) = d.data
+y(d::AbstractDataObject) = y(data(d))
+x(d::AbstractDataObject) = y(data(d))
+
+tmpvar(d::AbstractDataObject) = d.tmpvar
+tmpvar(d::AbstractData) = NoTmpVar()
 
 nobs(d::AbstractData) = length(y(d))
-length(d::DataScalar) = length(y(d))
-ptr(d::DataScalar) = OneTo(length(y(d)))
+length(d::AbstractDataObject) = length(ptr(d))-1
 
-function Observation(d::DataScalar, i)
-    yi = y(d)[i]
-    xi = view(x(d),i)
-    Observation
-end
+ptr(d) = ptr(data(d))
+ptr( d::AbstractData) = d.ptr
+ptr(d::DataScalar)    = OneTo(nobs(d)+1)
 
-getorview(d::DataSingle,i) = getindex(y(d), i)
-getorview(d::DataMult,i)   = view(    y(d), i)
+ptrstart( d, i) = getindex(ptr(d),  i)
+ptrstop(  d, i) = ptrstart(ptr(d),i+1)-1
+ptrlength(d, i) = ptrstop(d,i) - ptrstart(d,i) + 1
+ptrrange( d, i) = ptrstart(d,i) : ptrstop(d,i)
 
-"spits out data for observation `i`, be it length 1 or length n"
-function Observation(d::AbstractDataSet, i) 
-    yi = getorview(d, i)
-    xi = view(x(d), :, i)
-    return Observation(yi, xi)
-end
+# default to making ObsGroups
+getindex(d::AbstractDataObject, i) = ObservationGroup(d,i)
 
-
-
-
-
-
-# ObservationGroup
-length(o::AbstractObservation) = length(_y(o))
-
-# default methods for iteration through an AbstractDataStructure
-firstindex(d::AbstractDataStructure) = 1
-lastindex( d::AbstractDataStructure) = length(d)
-IndexStyle(d::AbstractDataStructure) = IndexLinear()
-eachindex( d::AbstractDataStructure) = OneTo(length(d))
-
-# Default iteration method is to create an ObservationGroup
-getindex(  d::AbstractDataStructure, i) = ObservationGroup(d,i)
-
-function iterate(d::AbstractDataStructure, i=firstindex(d))
+function iterate(d::AbstractDataObject, i=firstindex(d))
     if i <= lastindex(d)
         return getindex(d,i), i+1
     else
@@ -136,119 +122,46 @@ function iterate(d::AbstractDataStructure, i=firstindex(d))
     end
 end
 
-# AbstractDataSet iteration utilties
-#------------------------------------------
+firstindex(d::AbstractDataObject) = 1
+lastindex(d::AbstractDataObject) = length(d)
 
-_data(d::AbstractDataSet) = d
+# idx(d::DataScalar) = ptr(d)
+idx(o::ObservationGroup) = o.idx
+# idx(d::AbstractData) = ptr(d)
+# firstindex(o::AbstractDataObject) = ptrstart( data(o), idx(o))
+# lastindex( o::AbstractDataObject) = ptrstop(  data(o), idx(o))
+# length(    o::AbstractDataObject) = ptrlength(data(o), idx(o))
 
-group_ptr(d::AbstractDataSet) = throw(error("group_ptr not defined for $(typeof(d))"))
-obs_ptr(  d::AbstractDataSet) = throw(error("obs_ptr not defined for $(typeof(d))"))
+# Observation(og::ObservationGroup) = Observation(DataSetType(og),og)
 
-# default method
-length(   d::AbstractDataSet) = length(group_ptr(d))-1
-_num_obs( d::AbstractDataSet) = length(obs_ptr(d))-1
-
-groupstart( d::AbstractDataSet, i::Integer) = getindex(group_ptr(d), i)
-groupstop(  d::AbstractDataSet, i::Integer) = groupstart(d,i+1)-1
-grouplength(d::AbstractDataSet, i::Integer) = groupstop(d,i) - groupstart(d,i) + 1
-grouprange( d::AbstractDataSet, i::Integer) = groupstart(d,i) : groupstop(d,i)
-
-obsstart( d::AbstractDataSet, j::Integer) = getindex(obs_ptr(d),j)
-obsstop(  d::AbstractDataSet, j::Integer) = obsstart(d,j+1)-1
-obslength(d::AbstractDataSet, j::Integer) = obsstop(d,j) - obsstart(d,j) + 1
-obsrange( d::AbstractDataSet, j::Integer) = obsstart(d,j) : obsstop(d,j)
-
-# DataSet or Observation
-_model(d::DataOrObs) = d.model
-_y(    d::DataOrObs) = d.y
-_x(    d::DataOrObs) = d.x
-_num_x(d::DataOrObs) = size(_x(d), 1)
-
-# ObservationGroup iteration utilties
-#------------------------------------------
-
-_data( g::AbstractObservationGroup) = g.data
-_i(    g::AbstractObservationGroup) = g.i
-_num_x(g::AbstractObservationGroup) = _num_x(_data(g))
-_nparm(g::AbstractObservationGroup) = _nparm(_data(g))
-_model(g::AbstractObservationGroup) = _model(_data(g))
-
-length(    g::AbstractObservationGroup) = grouplength(_data(g), _i(g))
-grouprange(g::AbstractObservationGroup) = grouprange( _data(g), _i(g))
-
-obsstart( g::AbstractObservationGroup, k) = obsstart( _data(g), getindex(grouprange(g), k))
-obsrange( g::AbstractObservationGroup, k) = obsrange( _data(g), getindex(grouprange(g), k))
-obslength(g::AbstractObservationGroup, k) = obslength(_data(g), getindex(grouprange(g), k))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-(::Type{T})(x::AbstractTmpVar) where {T<:AbstractTmpVar} = x
-
-getindex(d::AbstractData,i) = ObservationGroup(d,i)
-
-y(d::AbstractData) = d.y
-x(d::AbstractData) = d.x
-
-ptr(d::AbstractDataSet) = d.ptr
-ptr(d::DataSingle) = nothing
-length(d::AbstractDataSet)  = length(ptr(d))
-length(o::Observation) = length(y(o))
-
-data(x::AbstractObservationGroup) = x.data
-idx( x::AbstractObservationGroup) = x.idx
-
-getorview(d::DataSingle,i) = getindex(y(d), i)
-getorview(d::DataMult,i)   = view(    y(d), i)
-
-"spits out data for observation `i`, be it length 1 or length n"
-function Observation(d::AbstractDataSet, i) 
-    yi = getorview(d, i)
-    xi = view(x(d), :, i)
-    return Observation(yi, xi)
+function Observation(::Type{DataScalar}, og::ObservationGroup)
+    d  = data(og)
+    i = idx(og)
+    t = tmpvar(og)
+    yi = getindex(y(d), i)::Number
+    ti = getindex(t   , i)::AbstractVector
+    xi = view(x(d), :, i)::AbstractTmpVar
+    return Observation(yi, xi, ti)
 end
 
-"retrieves "
-function Observation(obsgrp::ObservationGroup{<:AbstractDataSet}) 
-    d = data(obsgrp)
-    i = index(obsgrp)
-    return Observation(d, i) 
+function Observation(::Type{DataVector}, og::ObservationGroup)
+    d  = data(og)
+    t = tmpvar(og)
+    i = idx(og)
+    rng = ptrrange(d, i)
+    yi = view(y(d), rng)
+    ti = view(t   , rng)
+    xi = view(x(d), :, rng) 
+    return Observation(yi, xi, ti)
 end
 
-function Observation(obsgrp::ObservationGroup{<:DataWithTmpVar}) 
-    dtv = data(obsgrp)
-    i = index(obsgrp)
-    tv  = TmpVar(obsgrp)
-    obs = Observation(data(dtv), i)
-    return DataWithTmpVar(tv, obs)
-end
-
-
-function TmpVar(d::AbstractDataSet, θ)
-    n = length(y(d))
-    R = eltype(θ)
-    xbeta = Vector{R}(undef, n)
-    return TmpVar(xbeta)
-end
-
-getorview(d::TmpVar, i::Integer) = getindex(xbeta(d), i)
-getorview(d::TmpVar, i::AbstractVector) = view(xbeta(d), i)
-
-function TmpVar(d::AbstractObservationGroup)
-    dtv = data(d)
-    i = idx(d)
-    tmpv = tmpvar(dtv)
-    return getorview(tmpv, i)
+function Observation(::Type{DataVectorByScalar}, og::ObservationGroup{<:ObservationGroup})
+    d  = data(og)
+    t = tmpvar(og)
+    yi = getindex(y(d), i)
+    ti = getindex(t   , i)
+    xi = view(x(d), :, i) 
+    return Observation(yi, xi, ti)
 end
 
 
