@@ -13,16 +13,11 @@ end # module
 #     group_ptr, obs_ptr,
 #     TmpVarTest,
 #     xbeta
+using Base: OneTo
 using TestModule
-using TestModule: DataScalar, DataVector, DataVectorByScalar,
-    AbstractDataObject,
-    Observation,
-    ObservationGroup,
-    ptr, y, x, idx,
-    TmpVar, tmpvar,
-    DataWithTmpVar,
-    nobs,
-    data
+using TestModule: y, x, data, group_ptr, idx,
+    groupstart, groupstop, grouplength, grouprange
+    # ptr, ptrlength, ptrstart, ptrstop, ptrrange
 
 # make stuff
 k, n = 2,4
@@ -36,39 +31,65 @@ _xbC  = _x' *_betC
 tmpvF = TmpVar(_xbF)
 tmpvC = TmpVar(_xbC)
 
-datascalar   = DataScalar(_y,_x)
-datavec      = DataVector(_y,_x,_ptr)
-datavecbysca = DataVectorByScalar(_y,_x,_ptr)
-datascalar_wtmpvar   = DataWithTmpVar(datascalar   , tmpvC)
-datavec_wtmpvar      = DataWithTmpVar(datavec      , tmpvC)
-datavecbysca_wtmpvar = DataWithTmpVar(datavecbysca , tmpvC)
+dsca     = Data(_y,_x)
+dvec     = Data(_y,_x,_ptr)
+dsca_tmp = DataWithTmpVar(dsca , tmpvC)
+dvec_tmp = DataWithTmpVar(dvec , tmpvC)
 
-datasets = (datascalar, datavec, datavecbysca)
+datasets = (dsca, dvec, dsca_tmp, dvec_tmp)
 for d in datasets
-    @test nobs(d) == n
+    
+    @test d isa AbstractDataObject
+
+    # @test nobs(d) == n
     og  = ObservationGroup(d, 1)
-    dtvC = DataWithTmpVar(d, tmpvC)
-    dtvF = DataWithTmpVar(d, tmpvF)
-    ogC  = ObservationGroup(DataWithTmpVar(d, tmpvC), 1)
-    ogF  = ObservationGroup(DataWithTmpVar(d, tmpvF), 1)
-
-    @test data(d) == d
-    @test data(og) == d
+    ogC  = ObservationGroup(d, 1)
+    ogF  = ObservationGroup(d, 1)
+        
+    @test first(d) isa ObservationGroup
+    @test first(first(d)) isa ObservationGroup
+    @test first(first(first(d))) isa ObservationGroup
+    @test first(first(first(first(d)))) isa ObservationGroup
     
-    @test data(dtvC) == d
-    @test data(dtvF) == d
-    
-    @test data(ogC ) != d
-    @test data(ogF ) != d
-    @test data(ogC ) === dtvC
-    @test data(ogF ) === dtvF
-
+    @test last(d) isa ObservationGroup
+    @test last(last(d)) isa ObservationGroup
 end
 
-@test datascalar isa AbstractDataObject
+@test group_ptr(dsca_tmp) == group_ptr(dsca) == OneTo(n+1)
+@test group_ptr(dvec_tmp) == group_ptr(dvec) == _ptr
+
+group_ptr(first(first(dsca)))
+
+@test grouprange(last(dsca)) == 4:4
+@test grouprange(last(dvec)) == 2:4
+
+groupstop(first(first(dsca)))
+groupstop(last(last(dsca)))
+
+grouprange(first(first(dvec)))
+grouprange(last(last(dvec)))
+
+groupstart(last(dvec))
+groupstop(last(dvec))
+
+grouprange(last(dsca))
+grouprange(last(last(dsca)))
+grouprange(last(last(dsca)))
+
+og = last(dvec)
+ogog = last(og)
+
+data(ogog)
 
 
-ptr(datascalar)
+for (i,og) in enumerate(dsca_tmp)
+    println((idx(og), grouprange(og)))
+end
+
+for (i,og) in enumerate(first(dvec))
+    println((idx(og), grouprange(og)))
+end
+
 
 for (i, og) in enumerate(datascalar_wtmpvar)
     @test og isa ObservationGroup

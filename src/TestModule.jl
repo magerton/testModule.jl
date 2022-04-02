@@ -7,6 +7,11 @@ import Base: length, size, iterate,
 
 using Base: OneTo
 
+export AbstractDataObject,
+    AbstractTmpVar, AbstractData, AbstractObservation,
+    DataWithTmpVar, ObservationGroup, Observation,
+    NoTmpVar, TmpVar, Data
+
 abstract type AbstractDataObject end
 abstract type AbstractTmpVar{R}         <: AbstractDataObject end
 abstract type AbstractData              <: AbstractDataObject end
@@ -38,76 +43,21 @@ struct NoTmpVar{R} <: AbstractTmpVar{R}
     NoTmpVar() = new{Nothing}()
 end
 
-struct TmpVar{R} <: AbstractTmpVar{R}
-    xbeta::Vector{R}
+struct TmpVar{R,V<:AbstractVector{R}} <: AbstractTmpVar{R}
+    xbeta::V
 end 
 
-# abstract type AbstractOutcomeType end
-# struct ScalarOutcome end
-# struct VectorOutcome end
-
-abstract type DataSetType end
-
-struct Data{T::DataSetType,Y::Vector,X::Matrix,P::AbstractVector} <: AbstractData
-    typ::T
+"group_ptr defines groups of observations"
+struct Data{Y<:Vector,X<:Matrix,P<:AbstractVector} <: AbstractData
     y::Y
     x::X
-    ptr::P
-end
-
-ptrrange(og::ObservationGroup) = 
-
-obsgrp(x,i) = (data(x), (idx(x), i))
-getindex(x,i) = obsgrp(x,i)
-
-
-for (i,unit) in dataroy  # i is 1:numy... ptr is 1:numy
-    for t in idx(unit)   # idx = i:(i+1)-1
-        Observation(dataroy,t)
-        tmpvar(unit, t) # is tmpvar[t]
+    group_ptr::P
+    function Data(y::Y, x::X, group_ptr::P=OneTo(length(y)+1)) where {Y,X,P}
+        return new{Y,X,P}(y,x,group_ptr)
     end
 end
 
-for (i,unit) in datapdxn # i is 1:numy
-    Observation(datapdxn, idx(unit)) # idx is ptr[i] : ptr[i+1]-1
-    tmpvar(unit, idx(unit))  # is tmpvar[idx]
-end
-
-for (i,unit) in datadrill  # i is 1:numy
-    for t in idx(unit)     # idx is ptr[i] : ptr[i+1]-1
-        Observation(datadrill,t)
-        tmpvar(unit, t)   # is just tmpvar 
-    end
-end
-
-
-const DataOrObs = Union{AbstractData, AbstractObservation}
-
-data(d::DataOrObs) = d
-y(d::DataOrObs) = d.y
-x(d::DataOrObs) = d.x
-
-data(d::AbstractDataObject) = d.data
-y(d::AbstractDataObject) = y(data(d))
-x(d::AbstractDataObject) = y(data(d))
-
-tmpvar(d::AbstractDataObject) = d.tmpvar
-tmpvar(d::AbstractData) = NoTmpVar()
-
-nobs(d::AbstractData) = length(y(d))
-length(d::AbstractDataObject) = length(ptr(d))-1
-
-ptr(d) = ptr(data(d))
-ptr( d::AbstractData) = d.ptr
-ptr(d::DataScalar)    = OneTo(nobs(d)+1)
-
-ptrstart( d, i) = getindex(ptr(d),  i)
-ptrstop(  d, i) = ptrstart(ptr(d),i+1)-1
-ptrlength(d, i) = ptrstop(d,i) - ptrstart(d,i) + 1
-ptrrange( d, i) = ptrstart(d,i) : ptrstop(d,i)
-
-# default to making ObsGroups
-getindex(d::AbstractDataObject, i) = ObservationGroup(d,i)
+getindex(  d::AbstractDataObject, i) = ObservationGroup(d,i)
 
 function iterate(d::AbstractDataObject, i=firstindex(d))
     if i <= lastindex(d)
@@ -117,19 +67,50 @@ function iterate(d::AbstractDataObject, i=firstindex(d))
     end
 end
 
-firstindex(d::AbstractDataObject) = 1
-lastindex(d::AbstractDataObject) = length(d)
 
-# idx(d::DataScalar) = ptr(d)
-idx(o::ObservationGroup) = o.idx
-# idx(d::AbstractData) = ptr(d)
-# firstindex(o::AbstractDataObject) = ptrstart( data(o), idx(o))
-# lastindex( o::AbstractDataObject) = ptrstop(  data(o), idx(o))
-# length(    o::AbstractDataObject) = ptrlength(data(o), idx(o))
+y(d::AbstractDataObject) = d.y
+x(d::AbstractDataObject) = d.x
 
-# Observation(og::ObservationGroup) = Observation(DataSetType(og),og)
+data(d::ObservationGroup) = d.data
+data(d::DataWithTmpVar) = d.data
+data(d::Data) = d
 
-function Observation(::Type{DataScalar}, og::ObservationGroup)
+group_ptr(d::Data) = d.group_ptr
+group_ptr(d::DataWithTmpVar) = group_ptr(data(d))
+group_ptr(d::ObservationGroup) = group_ptr(data(data(d)))
+
+# for Data / DataWithTmpVar
+groupstart( d, i) = getindex(group_ptr(d), i)
+groupstop(  d, i) = groupstart(d,i+1)-1
+grouplength(d, i) = groupstop(d,i) - groupstart(d,i) + 1
+grouprange( d, i) = groupstart(d,i) : groupstop(d,i)
+
+# for ObservationGroup
+idx(g::ObservationGroup) = g.idx
+groupstart( d) = groupstart( data(d), idx(d))
+groupstop(  d) = groupstop(  data(d), idx(d))
+grouplength(d) = grouplength(data(d), idx(d))
+grouprange( d) = grouprange( data(d), idx(d))
+
+# group_ptr(d::AbstractDataObject) = throw(error("group_ptr not defined for $(typeof(d))"))
+length(d::Data) = length(group_ptr(d))-1
+length(d::DataWithTmpVar) = length(data(d))
+length(d::ObservationGroup) = grouplength(d)
+
+# default methods for iteration through an AbstractDataStructure
+firstindex(d::Data) = 1
+firstindex(d::AbstractDataObject) = firstindex(data(d))
+lastindex( d::AbstractDataObject) = length(data(d))
+IndexStyle(d::AbstractDataObject) = IndexLinear()
+eachindex( d::AbstractDataObject) = OneTo(length(d))
+
+# default methods for iteration through an AbstractDataStructure
+firstindex(d::ObservationGroup) = groupstart(d)
+eachindex( d::ObservationGroup) = grouprange(d)
+
+
+
+function Observation(og::ObservationGroup)
     d  = data(og)
     i = idx(og)
     t = tmpvar(og)
@@ -139,25 +120,27 @@ function Observation(::Type{DataScalar}, og::ObservationGroup)
     return Observation(yi, xi, ti)
 end
 
-function Observation(::Type{DataVector}, og::ObservationGroup)
-    d  = data(og)
-    t = tmpvar(og)
-    i = idx(og)
-    rng = ptrrange(d, i)
-    yi = view(y(d), rng)
-    ti = view(t   , rng)
-    xi = view(x(d), :, rng) 
-    return Observation(yi, xi, ti)
-end
 
-function Observation(::Type{DataVectorByScalar}, og::ObservationGroup{<:ObservationGroup})
-    d  = data(og)
-    t = tmpvar(og)
-    yi = getindex(y(d), i)
-    ti = getindex(t   , i)
-    xi = view(x(d), :, i) 
-    return Observation(yi, xi, ti)
-end
+
+# for (i,unit) in dataroy  # i is 1:numy... group_ptr is 1:numy
+#     for t in idx(unit)   # idx = i:(i+1)-1
+#         Observation(dataroy,t)
+#         tmpvar(unit, t) # is tmpvar[t]
+#     end
+# end
+
+# for (i,unit) in datapdxn # i is 1:numy
+#     Observation(datapdxn, idx(unit)) # idx is group_ptr[i] : group_ptr[i+1]-1
+#     tmpvar(unit, idx(unit))  # is tmpvar[idx]
+# end
+
+# for (i,unit) in datadrill  # i is 1:numy
+#     for t in idx(unit)     # idx is group_ptr[i] : group_ptr[i+1]-1
+#         Observation(datadrill,t)
+#         tmpvar(unit, t)   # is just tmpvar 
+#     end
+# end
+
 
 
 end # module
