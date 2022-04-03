@@ -1,4 +1,4 @@
-using Revise, Test
+using Test
 
 module CompileTestModule
     using TestModule
