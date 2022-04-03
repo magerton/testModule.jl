@@ -88,15 +88,15 @@ getindex(t::TmpVar, i)  = getindex(xbeta(t), i)
 
 getindex(d::AbstractDataObject, i) = ObservationGroup(d, i)
 
-data(d::Data) = d
-group_ptr(d::Data) = d.group_ptr
-firstindex(d::Data) = 1
-lastindex(d::Data) = length(d.group_ptr)-1
-eachindex(d::Data) = OneTo(lastindex(d))
-length(d::Data) = lastindex(d)
+data(d::AbstractData) = d
+group_ptr(d::AbstractData) = d.group_ptr
+firstindex(d::AbstractData) = 1
+lastindex(d::AbstractData) = length(d.group_ptr)-1
+eachindex(d::AbstractData) = OneTo(lastindex(d))
+length(d::AbstractData) = lastindex(d)
 y(d::AbstractDataObject) = data(d).y
 x(d::AbstractDataObject) = data(d).x
-tmpvar(d::Data) = NoTmpVar()
+tmpvar(d::AbstractData) = NoTmpVar()
 
 data(d::DataWithTmpVar) = d.data
 group_ptr(d::DataWithTmpVar) = group_ptr(data(d))
@@ -122,7 +122,7 @@ tmpvar(o::Observation) = o.tmpvar
 
 Observation(d::DataWithTmpVar, i::Number)         = ObservationGet( d, i)
 Observation(d::DataWithTmpVar, i::AbstractVector) = ObservationView(d, i)
-Observation(d::Data, i) = Observation(DataWithTmpVar(d), i)
+Observation(d::AbstractData, i) = Observation(DataWithTmpVar(d), i)
 
 Observation(g::ObservationGroup{<:Union{DataWithTmpVar,Data}})   = ObservationView(data(g), eachindex(g))
 Observation(g::ObservationGroup{<:ObservationGroup}) = ObservationGet( data(data(g)), idx(g))
