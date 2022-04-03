@@ -36,50 +36,88 @@ dvec     = Data(_y,_x,_ptr)
 dsca_tmp = DataWithTmpVar(dsca , tmpvC)
 dvec_tmp = DataWithTmpVar(dvec , tmpvC)
 
+grouprange(last(last(dsca)))
+@which grouprange(first(last(dvec)))
+data(first(last(dvec)))
+
 datasets = (dsca, dvec, dsca_tmp, dvec_tmp)
+
 for d in datasets
     
     @test d isa AbstractDataObject
 
     # @test nobs(d) == n
     og  = ObservationGroup(d, 1)
-    ogC  = ObservationGroup(d, 1)
-    ogF  = ObservationGroup(d, 1)
+    @test getindex(d, 1) == og
         
     @test first(d) isa ObservationGroup
     @test first(first(d)) isa ObservationGroup
     @test first(first(first(d))) isa ObservationGroup
-    @test first(first(first(first(d)))) isa ObservationGroup
     
     @test last(d) isa ObservationGroup
     @test last(last(d)) isa ObservationGroup
+
 end
 
 @test group_ptr(dsca_tmp) == group_ptr(dsca) == OneTo(n+1)
 @test group_ptr(dvec_tmp) == group_ptr(dvec) == _ptr
 
-group_ptr(first(first(dsca)))
+for d in (dsca, dsca_tmp)
+    @test grouprange(first(d)) == 1:1
+    @test grouprange(first(first(d))) == 1:1
+    @test length(first(d)) == 1
+    @test length(first(first(d))) == 1
 
-@test grouprange(last(dsca)) == 4:4
-@test grouprange(last(dvec)) == 2:4
+    @test grouprange(last(d)) == 4:4
+    @test grouprange(last(last(d))) == 4:4
+    @test length(last(d)) == 1
+    @test length(last(last(d))) == 1
+end
 
-groupstop(first(first(dsca)))
-groupstop(last(last(dsca)))
 
-grouprange(first(first(dvec)))
-grouprange(last(last(dvec)))
 
-groupstart(last(dvec))
-groupstop(last(dvec))
+for d in (dvec, dvec_tmp)
+    @test grouprange(first(d)) == 1:1
+    @test grouprange(first(first(d))) == 1:1
+    @test length(first(d)) == 1
 
-grouprange(last(dsca))
-grouprange(last(last(dsca)))
-grouprange(last(last(dsca)))
+    @test grouprange(last(d)) == 2:4
+    @test grouprange(last(last(d))) == 2:4
+    @test length(last(d)) == 3
+end
 
-og = last(dvec)
-ogog = last(og)
+for d in (dsca, dvec)
+    for (i,og) in enumerate(d)
+        @test idx(og) == i
+    end
+end
 
-data(ogog)
+for d in (dsca, dvec)
+    t = 1
+    for og0 in d
+        Observation(og0)
+        for og1 in og0
+            # println("t = $t, i=$(idx(og0)), j=$(idx(og1))")
+            @test idx(og1) == t
+            Observation(og1)
+            t+=1
+        end
+    end
+end
+
+@test firstindex(getindex(dvec, 1)) == 1
+@test lastindex( getindex(dvec, 1)) == 1
+@test eachindex( getindex(dvec, 1)) == 1:1
+
+@test firstindex(getindex(dvec, 2)) == 2
+@test lastindex( getindex(dvec, 2)) == 1
+@test eachindex( getindex(dvec, 2)) == 2:1
+
+@test firstindex(getindex(dvec, 3)) == 2
+@test lastindex( getindex(dvec, 3)) == 4
+@test eachindex( getindex(dvec, 3)) == 2:4
+
+
 
 
 for (i,og) in enumerate(dsca_tmp)
