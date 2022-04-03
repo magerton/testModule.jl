@@ -79,6 +79,7 @@ end
 # ---------------------------------------------
 # ---------------------------------------------
 
+# tmpvars
 view(    ::NoTmpVar, i) = NoTmpVar()
 getindex(::NoTmpVar, i) = NoTmpVar()
 
@@ -86,46 +87,61 @@ xbeta(   t::TmpVar) = t.xbeta
 view(    t::TmpVar, i)  = view(xbeta(t), i)
 getindex(t::TmpVar, i)  = getindex(xbeta(t), i)
 
-getindex(d::AbstractDataObject, i) = ObservationGroup(d, i)
+# default methods apply more than one type
+y(d::AbstractDataObject) = data(d).y
+x(d::AbstractDataObject) = data(d).x
+data(d::AbstractDataObject) = d.data
+group_ptr(d::AbstractDataObject) = group_ptr(data(d))
+tmpvar(d::AbstractDataObject)     = d.tmpvar
 
+# type-specific methods
+# --------------------------
+
+# AbstractData
 data(d::AbstractData) = d
 group_ptr(d::AbstractData) = d.group_ptr
 firstindex(d::AbstractData) = 1
 lastindex(d::AbstractData) = length(d.group_ptr)-1
 eachindex(d::AbstractData) = OneTo(lastindex(d))
 length(d::AbstractData) = lastindex(d)
-y(d::AbstractDataObject) = data(d).y
-x(d::AbstractDataObject) = data(d).x
-tmpvar(d::AbstractData) = NoTmpVar()
+tmpvar(::AbstractData) = NoTmpVar()
 
-data(d::DataWithTmpVar) = d.data
-group_ptr(d::DataWithTmpVar) = group_ptr(data(d))
+# DataWithTmpVar methods access inner d.data
 firstindex(d::DataWithTmpVar) = firstindex(data(d))
-lastindex(d::DataWithTmpVar) = lastindex(data(d))
-eachindex(d::DataWithTmpVar) = eachindex(data(d))
-length(d::DataWithTmpVar) = length(data(d))
-tmpvar(d::DataWithTmpVar) = d.tmpvar
+lastindex(d::DataWithTmpVar)  = lastindex(data(d))
+eachindex(d::DataWithTmpVar)  = eachindex(data(d))
+length(d::DataWithTmpVar)     = length(data(d))
 
-data(g::ObservationGroup) = g.data
-group_ptr( g::ObservationGroup) = group_ptr(data(g))
+# ObservationGroup specifies iteration through
+# subset of data
+idx(g::ObservationGroup) = g.idx
 firstindex(g::ObservationGroup) = getindex(group_ptr(g), idx(g))
 lastindex( g::ObservationGroup) = getindex(group_ptr(g), idx(g)+1)-1
 eachindex( g::ObservationGroup) = firstindex(g) : lastindex(g)
 length(g::ObservationGroup) = lastindex(g) - firstindex(g) + 1
-idx(g::ObservationGroup) = g.idx
 tmpvar(g::ObservationGroup) = tmpvar(data(g))
 
+# Observation specific methods
 data(o::Observation) = o
-y(o::Observation) = o.y
-x(o::Observation) = o.x
 tmpvar(o::Observation) = o.tmpvar
 
+
+
+"grab just 1 row so that y,tmpvar are both scalar"
 Observation(d::DataWithTmpVar, i::Number)         = ObservationGet( d, i)
+"grab multiple rows so that y, tmpvar are views/vectors"
 Observation(d::DataWithTmpVar, i::AbstractVector) = ObservationView(d, i)
+"convenience wrapper"
 Observation(d::AbstractData, i) = Observation(DataWithTmpVar(d), i)
 
+# This is a tad awkward
+"grabs obs in rows ptr[idx(g)] : ptr[idx(g)+1]-1"
 Observation(g::ObservationGroup{<:Union{DataWithTmpVar,Data}})   = ObservationView(data(g), eachindex(g))
+"grabs obs in idx(g) only"
 Observation(g::ObservationGroup{<:ObservationGroup}) = ObservationGet( data(data(g)), idx(g))
+
+"iterating over any kind of data object yields an obs group"
+getindex(d::AbstractDataObject, i) = ObservationGroup(d, i)
 
 "iteration over a Data/DataWithTmpVar yields an Obs Group"
 function iterate(d::AbstractDataObject, i=firstindex(d))
@@ -136,6 +152,7 @@ function iterate(d::AbstractDataObject, i=firstindex(d))
     end
 end
 
+"grabs obs in idx(g) only"
 function ObservationGet(data,i)
     t = tmpvar(data)
     yi = getindex(y(data), i)
@@ -144,6 +161,7 @@ function ObservationGet(data,i)
     return Observation(yi, xi, ti)
 end
 
+"grabs obs in rows ptr[idx(g)] : ptr[idx(g)+1]-1"
 function ObservationView(data, idx)
     t = tmpvar(data)
     yi = view(y(data), idx)
