@@ -6,7 +6,7 @@ end # module
 
 using Base: OneTo
 using TestModule
-using TestModule: y, x, data, group_ptr, idx,
+using TestModule: y, x, data, group_ptr, idx, tmpvar,
     Observation, ObservationGet, ObservationView,
     ObservationGroup, Data, DataWithTmpVar, TmpVar,
     NoTmpVar
@@ -24,6 +24,9 @@ using TestModule: y, x, data, group_ptr, idx,
     _xbC  = _x' *_betC
     tmpvF = TmpVar(_xbF)
     tmpvC = TmpVar(_xbC)
+
+    @test eltype(tmpvF) == Float64
+    @test eltype(tmpvC) == ComplexF64
 
     dsca     = Data(_y,_x)
     dvec     = Data(_y,_x,_ptr)
@@ -77,12 +80,24 @@ using TestModule: y, x, data, group_ptr, idx,
     for d in (dsca, dvec)
         t = 1
         dtmp = (d isa Data ? dvec : dvec_tmp )
+        
         for (i,og0) in enumerate(d)
-            @test Observation(og0) == ObservationView(dtmp,eachindex(og0))
+            idxs = eachindex(og0)
+            obs0 = Observation(og0)
+            
+            @test obs0 == ObservationView(dtmp,idxs)
+            @test y(obs0) === view(_y, idxs)
+            @test x(obs0) === view(_x, :, idxs)
+            @test tmpvar(obs0) === view(tmpvar(dtmp), idxs)
+            
             for og1 in og0
                 # println("t = $t, i=$(idx(og0)), j=$(idx(og1))")
+                obs1 = Observation(og1)
                 @test idx(og1) == t
-                @test Observation(og1) == ObservationGet(dtmp,t)
+                @test obs1 == ObservationGet(dtmp,t)
+                @test y(obs1) === getindex(_y, t)
+                @test x(obs1) === view(_x, :, t)
+                @test tmpvar(obs0) === getindex(tmpvar(dtmp), t)
                 t+=1
             end
         end

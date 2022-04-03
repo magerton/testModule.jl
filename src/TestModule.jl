@@ -20,9 +20,22 @@ export AbstractDataObject,
 
 
 abstract type AbstractDataObject end
-abstract type AbstractTmpVar{R}         <: AbstractDataObject end
-abstract type AbstractData              <: AbstractDataObject end
-abstract type AbstractObservation       <: AbstractDataObject end
+
+"typed so that we can ensure tmpvars are generate w/ same type as parameter vector. useful for autodiff"
+abstract type AbstractTmpVar{R}   <: AbstractDataObject end
+abstract type AbstractData        <: AbstractDataObject end
+abstract type AbstractObservation <: AbstractDataObject end
+
+eltype(::AbstractTmpVar{R}) where {R} = R
+
+"Placeholder tmpvar"
+struct NoTmpVar{R} <: AbstractTmpVar{R}
+    NoTmpVar() = new{Nothing}()
+end
+
+struct TmpVar{R,V<:AbstractVector{R}} <: AbstractTmpVar{R}
+    xbeta::V
+end
 
 """
 we give a liklihood evaluation a DataSet/ObsGroup/Observation
@@ -31,9 +44,11 @@ object with a `AbstractTmpVar`
 struct DataWithTmpVar{D<:AbstractData, T<:AbstractTmpVar} <: AbstractDataObject
     data::D
     tmpvar::T
+    # inner constructor defaults to a placeholder
+    function DataWithTmpVar(d::D,t::T=NoTmpVar()) where {D,T}
+        return new{D,T}(d,t)
+    end
 end
-
-DataWithTmpVar(d) = DataWithTmpVar(d, NoTmpVar())
 
 "wrap a DataSet/DataWithTmpVar/ObsGroup/Observation with an index"
 struct ObservationGroup{D,I} <: AbstractDataObject
@@ -48,14 +63,6 @@ struct Observation{YT,XT,T} <: AbstractObservation
     tmpvar::T
 end
 
-struct NoTmpVar{R} <: AbstractTmpVar{R}
-    NoTmpVar() = new{Nothing}()
-end
-
-struct TmpVar{R,V<:AbstractVector{R}} <: AbstractTmpVar{R}
-    xbeta::V
-end 
-
 "group_ptr defines groups of observations"
 struct Data{Y<:Vector,X<:Matrix,P<:AbstractVector} <: AbstractData
     y::Y
@@ -66,15 +73,18 @@ struct Data{Y<:Vector,X<:Matrix,P<:AbstractVector} <: AbstractData
     end
 end
 
-
 # ---------------------------------------------
 # ---------------------------------------------
 #     FUNCTIONS
 # ---------------------------------------------
 # ---------------------------------------------
 
-view(::NoTmpVar, i) = NoTmpVar()
+view(    ::NoTmpVar, i) = NoTmpVar()
 getindex(::NoTmpVar, i) = NoTmpVar()
+
+xbeta(   t::TmpVar) = t.xbeta
+view(    t::TmpVar, i)  = view(xbeta(t), i)
+getindex(t::TmpVar, i)  = getindex(xbeta(t), i)
 
 getindex(d::AbstractDataObject, i) = ObservationGroup(d, i)
 
