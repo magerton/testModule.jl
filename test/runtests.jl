@@ -9,7 +9,7 @@ using TestModule
 using TestModule: y, x, data, group_ptr, idx, tmpvar,
     Observation, ObservationGet, ObservationView,
     ObservationGroup, Data, DataWithTmpVar, TmpVar,
-    NoTmpVar
+    NoTmpVar, AbstractObservationIterator, ObservationGenerator
 
 @testset begin "Testing overall data interface" 
 
@@ -77,10 +77,10 @@ using TestModule: y, x, data, group_ptr, idx, tmpvar,
         end
     end
 
+    # For raw data
     for d in (dsca, dvec)
         t = 1
-        dtmp = (d isa Data ? dvec : dvec_tmp )
-        
+        dtmp = DataWithTmpVar(d)
         for (i,og0) in enumerate(d)
             idxs = eachindex(og0)
             obs0 = Observation(og0)
@@ -90,10 +90,9 @@ using TestModule: y, x, data, group_ptr, idx, tmpvar,
             @test x(obs0) === view(_x, :, idxs)
             @test tmpvar(obs0) === view(tmpvar(dtmp), idxs)
             
-            for og1 in og0
+            for obs1 in ObservationGenerator(og0)
                 # println("t = $t, i=$(idx(og0)), j=$(idx(og1))")
-                obs1 = Observation(og1)
-                @test idx(og1) == t
+                @test obs1 isa Observation
                 @test obs1 == ObservationGet(dtmp,t)
                 @test y(obs1) === getindex(_y, t)
                 @test x(obs1) === view(_x, :, t)
@@ -102,6 +101,32 @@ using TestModule: y, x, data, group_ptr, idx, tmpvar,
             end
         end
     end
+
+    # For raw data with tmpvars
+    for d in (dsca_tmp, dvec_tmp)
+        t = 1
+        for (i,og0) in enumerate(d)
+            idxs = eachindex(og0)
+            obs0 = Observation(og0)
+
+            @test obs0 == ObservationView(d, idxs)
+            @test y(obs0) === view(_y, idxs)
+            @test x(obs0) === view(_x, :, idxs)
+            @test tmpvar(obs0) === view(tmpvar(d), idxs)
+            
+            for obs1 in ObservationGenerator(og0)
+                # println("t = $t, i=$(idx(og0)), j=$(idx(og1))")
+                @test obs1 isa Observation
+                @test obs1 == ObservationGet(d,t)
+                @test y(obs1) === getindex(_y, t)
+                @test x(obs1) === view(_x, :, t)
+                @test tmpvar(obs1) === getindex(tmpvar(d), t)
+                t+=1
+            end
+        end
+    end
+
+
 
 
 end # testset
