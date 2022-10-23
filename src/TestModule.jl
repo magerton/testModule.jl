@@ -1,13 +1,16 @@
 module TestModule
 
-# extend these methods
-import Base: length, size, iterate,
-    firstindex, lastindex, eachindex, getindex, IndexStyle,
-    view, ==, eltype
-
 using Base: OneTo
+using ForwardDiff
+using Optim
+
+const FD = ForwardDiff
+using ForwardDiff: Dual, GradientConfig, Chunk, value, gradient!
+
 
 include("data-structure.jl")
-# include("optim-fd.jl")
+include("genglobal.jl")
+include("optim-fd.jl")
+
 
 end # module
