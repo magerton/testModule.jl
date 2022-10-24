@@ -11,7 +11,6 @@ using ForwardDiff
 using ForwardDiff: Dual, GradientConfig, Chunk, value
 using TestModule
 using Optim
-using HaltonSequences
 
 const fd = ForwardDiff
 const tm = TestModule
@@ -49,8 +48,8 @@ res = optimize(f, theta₀, BFGS(), autodiff = :forward)
 hcat(res.minimizer, theta₀)
 
 tm.UnitHalton(2, 0, 10)(1)
-Halton{Rational}(2, start=1, length=10)
+# Halton{Rational}(2, start=1, length=10)
 
-Halton{Rational}(3,start=1, length=10)
+# Halton{Rational}(3,start=1, length=10)
 
 

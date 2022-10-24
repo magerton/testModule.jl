@@ -86,7 +86,8 @@ end
 
 
 function UnitHalton(base, skip, len)
-    return (i) -> Halton(base; start=start = skip + (i-1)*len + 1, length=len)
+    # return (i) -> Halton(base; start=start = skip + (i-1)*len + 1, length=len)
+    return (i) -> HaltonSeq(base, len, skip + (i-1)*len, StatsFuns.norminvcdf)
 end
 
 
@@ -123,8 +124,7 @@ function simloglik_produce!(llm::AbstractMatrix{T}, theta::AbstractVector{T}, da
 
         f(ψi) = a + (b + c*ψi)*ψi
         
-        for (i,ψ2q) in enumerate(haltons(i))
-            ψ2 = norminvcdf(ψ2q)
+        for (i,ψ2) in enumerate(haltons(i))
             llm[i] = f(ψ2)
         end
         return nothing
