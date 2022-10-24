@@ -58,8 +58,11 @@ tm.simloglik_produce!(llm, ψmat, theta₀, data)
 # @btime tm.simloglik_produce!($llm, $ψmat, $theta₀, $data)
 # @profview [(tm.simloglik_produce!(llm, ψmat, theta₀, data); nothing) for i in 1:1_000]
 
-f(θ) = tm.simloglik_produce(θ, data)
-res = optimize(f, theta₀, BFGS(), autodiff = :forward)
+cfg = tm.LLGradientConfig(theta₀)
+llmd = similar(llm, eltype(cfg))
+ff(θ) = tm.simloglik_produce!(llmd, ψmat, θ, data)
+odfg = tm.LLOnceDifferentiable(ff, theta₀)
+
+tm.resetOnceDifferentiable!(odfg)
+res = optimize(odfg, theta₀, BFGS())
 hcat(res.minimizer, theta₀)
-
-
