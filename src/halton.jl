@@ -17,6 +17,15 @@ The algorithm is presented in Kolar & O'Shea (1993),
 <https://doi.org/10.1016/0898-1221(93)90307-H> uses 
 `Vector`s `d` and `r` to keep track of intermediate
 computations. 
+
+
+# this may be faster
+https://www.pbr-book.org/3ed-2018/Sampling_and_Reconstruction/The_Halton_Sampler#fragment-GeneraterandomdigitpermutationsforHaltonsampler-0
+https://hbfs.wordpress.com/2017/09/07/halton-sequences-generating-random-sequences-vii/
+https://stackoverflow.com/questions/29553133/cuda-generating-the-halton-sequence-in-parallel
+https://stackoverflow.com/questions/34242785/change-bit-state-in-julia
+https://stackoverflow.com/questions/746171/efficient-algorithm-for-bit-reversal-from-msb-lsb-to-lsb-msb-in-c
+https://discourse.julialang.org/t/uint8-access-bits/43990/9
 """
 struct HaltonSeq
     d::Vector{Int}
