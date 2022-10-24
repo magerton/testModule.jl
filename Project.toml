@@ -4,4 +4,10 @@ authors = ["Mark Agerton <mjagerton@ucdavis.edu>"]
 version = "0.0.1"
 
 [deps]
+DiffResults = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+HaltonSequences = "13907d55-377f-55d6-a9d6-25ac19e11b95"
+Optim = "429524aa-4258-5aef-a3af-852621145aeb"
+StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

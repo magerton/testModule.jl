@@ -14,6 +14,6 @@
 		}
 	],
 	"settings": {
-		"julia.environmentPath": "d:\\libraries\\julia\\dev\\TestModule"
+		"julia.environmentPath": "c:\\Users\\mjagerton\\.julia\\dev\\TestModule"
 	}
 }
