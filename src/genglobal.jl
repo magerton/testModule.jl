@@ -1,7 +1,9 @@
 """
-@GenGlobal
+    @GenGlobal
+
 Declare expression `VARNAME` to be a global variable, export it, and generate an exported functions
-`set_VARNAME()` that sets the global and `get_VARNAME()` that gets the variable
+`set_VARNAME!()` that sets the global and `get_VARNAME()` that gets the variable
+
 # Example
 ```julia-repl
 @GenGlobal myglob1 myglob2
@@ -18,7 +20,7 @@ See <https://stackoverflow.com/questions/31313040/julia-automatically-generate-f
 macro GenGlobal(globalnames::Symbol...)
     e = quote end  # start out with a blank quoted expression
     for varname in globalnames
-        setname = Symbol("set_$(varname)") # create function name
+        setname = Symbol("set_$(varname)!") # create function name
         getname = Symbol("get_$(varname)") # create function name
 
         # this next part creates another quoted expression, which are just the 2 statements
