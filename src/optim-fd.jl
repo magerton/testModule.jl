@@ -1,12 +1,7 @@
 # ----------------------------
-# to send vars to remotes
-# ----------------------------
-
-@GenGlobal GData
-@GenGlobal GTmp
-
-# ----------------------------
-# to control duals
+# to control Dual eltype/tags
+# in creation of OnceDiff'ble fcts
+# for optimization
 # ----------------------------
 
 using Optim.NLSolversBase.DiffResults: DiffResult
@@ -59,6 +54,10 @@ function resetOnceDifferentiable!(odfg)
     return nothing
 end
 
+# ----------------------------
+# data creation & iteration
+# ----------------------------
+
 getindices(ptr,i) = ptr[i] : (ptr[i+1]-1)
 
 function makedata(;nunits=10, k=3, sigma=1.0, alpha=1.0, beta=ones(k), maxobsperunit=8)
@@ -82,11 +81,14 @@ function makedata(;nunits=10, k=3, sigma=1.0, alpha=1.0, beta=ones(k), maxobsper
 
 end
 
+# ----------------------------
+# loglik
+# ----------------------------
 
 """
 update llmᵢ += logL( (y-xβ-αψ*ψ₂ᵢ)/σᵤ | ψ₂ᵢ )
 """
-function simloglik_produce!(llm::AbstractMatrix{T}, ψmat::AbstractMatrix, theta::AbstractVector{T}, data, i::Int) where {T}
+@noinline function simloglik_produce!(llm::AbstractMatrix{T}, ψmat::AbstractMatrix, theta::AbstractVector{T}, data::NamedTuple, i::Int) where {T}
     
     nsim, nunits = size(llm)
     size(llm) == size(ψmat) || throw(DimensionMismatch())
@@ -125,7 +127,7 @@ function simloglik_produce!(llm::AbstractMatrix{T}, ψmat::AbstractMatrix, theta
     return nothing
 end
 
-function simloglik_produce!(llm, ψmat, theta, data)
+@noinline function simloglik_produce!(llm::AbstractMatrix, ψmat::AbstractMatrix, theta::AbstractVector, data::NamedTuple)
     nunits = length(data.ptr)-1
     fill!(llm, 0)
     for i in 1:nunits
@@ -144,3 +146,26 @@ function simloglik_produce(theta, data; nsim=500)
     map!(norminvcdf, ψmat, ψmat)
     return simloglik_produce!(llm, ψmat, theta, data)
 end
+
+# ----------------------------
+# to send vars to remotes
+# ----------------------------
+
+@GenGlobal GData
+@GenGlobal GPsi
+@GenGlobal GLLMat
+
+function set_simloglik_produceglobals!(llm, ψmat, data)
+    set_GData!(data)
+    set_GLLMat!(llm)
+    set_GPsi!(ψmat)
+    return nothing
+end
+
+function simloglik_produce_globals!(theta::AbstractVector)
+    llm = get_GLLMat()
+    ψmat = get_GPsi()
+    data = get_GData()
+    return simloglik_produce!(llm, ψmat, theta, data)
+end
+

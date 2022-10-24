@@ -59,6 +59,10 @@ tm.simloglik_produce!(llm, ψmat, theta₀, data)
 # @profview [(tm.simloglik_produce!(llm, ψmat, theta₀, data); nothing) for i in 1:1_000]
 
 cfg = tm.LLGradientConfig(theta₀)
+theta₀d = cfg.duals
+ForwardDiff.seed!(theta₀d, theta₀, cfg.seeds)
+
+
 llmd = similar(llm, eltype(cfg))
 ff(θ) = tm.simloglik_produce!(llmd, ψmat, θ, data)
 odfg = tm.LLOnceDifferentiable(ff, theta₀)
@@ -66,3 +70,14 @@ odfg = tm.LLOnceDifferentiable(ff, theta₀)
 tm.resetOnceDifferentiable!(odfg)
 res = optimize(odfg, theta₀, BFGS())
 hcat(res.minimizer, theta₀)
+
+
+tm.set_simloglik_produceglobals!(llmd, ψmat, data)
+tm.simloglik_produce_globals!(theta₀d)
+tm.simloglik_produce!(llmd, ψmat, theta₀d, data)
+@test tm.simloglik_produce_globals!(theta₀d) == tm.simloglik_produce!(llmd, ψmat, theta₀d, data)
+
+# @btime tm.simloglik_produce_globals!($theta₀d)
+# @btime tm.simloglik_produce!($llmd, $ψmat, $theta₀d, $data)
+
+
