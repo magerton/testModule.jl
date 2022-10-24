@@ -61,7 +61,7 @@ end
 
 getindices(ptr,i) = ptr[i] : (ptr[i+1]-1)
 
-function makedata(;nunits=10, k=3, sigma=1.0, alpha=1.0, beta=ones(k), maxobsperunit=10)
+function makedata(;nunits=10, k=3, sigma=1.0, alpha=1.0, beta=ones(k), maxobsperunit=8)
     nobs_per_obs = rand(0:maxobsperunit, nunits)
     obs_ptr = cumsum(vcat(0,nobs_per_obs)).+1
     @assert diff(obs_ptr) == nobs_per_obs
@@ -83,24 +83,14 @@ function makedata(;nunits=10, k=3, sigma=1.0, alpha=1.0, beta=ones(k), maxobsper
 end
 
 
-
-
-function UnitHalton(base, skip, len)
-    # return (i) -> Halton(base; start=start = skip + (i-1)*len + 1, length=len)
-    return (i) -> HaltonSeq(base, len, skip + (i-1)*len, StatsFuns.norminvcdf)
-end
-
-
 """
 update llmᵢ += logL( (y-xβ-αψ*ψ₂ᵢ)/σᵤ | ψ₂ᵢ )
 """
-function simloglik_produce!(llm::AbstractMatrix{T}, theta::AbstractVector{T}, data, i::Int, base=2, skip=5000, nsim=5000) where {T}
+function simloglik_produce!(llm::AbstractMatrix{T}, ψmat::AbstractMatrix, theta::AbstractVector{T}, data, i::Int) where {T}
     
-    nunits = size(llm,2)
-    nsim == size(llm,1) || throw(DimensionMismatch("nsim must equal number of rows in llm"))
+    nsim, nunits = size(llm)
+    size(llm) == size(ψmat) || throw(DimensionMismatch())
     length(data.ptr) == nunits+1 || throw(DimensionMismatch("data.ptr must have nunits+1 elements"))
-
-    haltons = UnitHalton(base,skip,nsim)
 
     idx = getindices(data.ptr, i)
     n = length(idx)
@@ -113,6 +103,8 @@ function simloglik_produce!(llm::AbstractMatrix{T}, theta::AbstractVector{T}, da
         
         x = view(data.X, :, idx)
         y = view(data.y,    idx)
+        ψi = view(ψmat, :, i)
+        llmi = view(llm, :, i)
 
         v = muladd(x', -beta, y)
         vsum = reduce(+, v)
@@ -124,8 +116,8 @@ function simloglik_produce!(llm::AbstractMatrix{T}, theta::AbstractVector{T}, da
 
         f(ψi) = a + (b + c*ψi)*ψi
         
-        for (i,ψ2) in enumerate(haltons(i))
-            llm[i] = f(ψ2)
+        for (m,ψim) in enumerate(ψi)
+            llmi[m] = f(ψim)
         end
         return nothing
     end
@@ -133,19 +125,22 @@ function simloglik_produce!(llm::AbstractMatrix{T}, theta::AbstractVector{T}, da
     return nothing
 end
 
-function simloglik_produce!(llm, theta, data; base=2, skip=5000, nsim=50)
+function simloglik_produce!(llm, ψmat, theta, data)
     nunits = length(data.ptr)-1
     fill!(llm, 0)
     for i in 1:nunits
-        simloglik_produce!(llm, theta, data, i, base, skip, nsim)
+        simloglik_produce!(llm, ψmat, theta, data, i)
     end
     SLL = sum(logsumexp(llm,dims=1))
     return -SLL
 end
 
-function simloglik_produce(theta, data; nsim=50, kwargs...)
+function simloglik_produce(theta, data; nsim=500)
     nunits = length(data.ptr)-1
     T = eltype(theta)
     llm = zeros(T, nsim, nunits)
-    return simloglik_produce!(llm, theta, data; nsim=nsim, kwargs...)
+    ψmat = Matrix{Float64}(undef, nsim, nunits)
+    HaltonSeq!(ψmat, 2, 5000)
+    map!(norminvcdf, ψmat, ψmat)
+    return simloglik_produce!(llm, ψmat, theta, data)
 end
