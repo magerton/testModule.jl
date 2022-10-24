@@ -3,6 +3,8 @@ module TestModule
 using Base: OneTo
 using ForwardDiff
 using Optim
+using HaltonSequences
+using StatsFuns
 
 const FD = ForwardDiff
 using ForwardDiff: Dual, GradientConfig, Chunk, value, gradient!
