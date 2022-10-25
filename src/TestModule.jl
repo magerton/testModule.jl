@@ -6,6 +6,7 @@ using Optim
 # using HaltonSequences
 using Primes: isprime
 using StatsFuns
+using Distributed, SharedArrays, ClusterManagers
 
 const FD = ForwardDiff
 using ForwardDiff: Dual, GradientConfig, Chunk, value, gradient!
