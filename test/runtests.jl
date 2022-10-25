@@ -12,6 +12,7 @@ using ForwardDiff: Dual, GradientConfig, Chunk, value
 using TestModule
 using Optim
 using StatsFuns: norminvcdf
+using Distributed, SharedArrays
 
 const fd = ForwardDiff
 const tm = TestModule
@@ -77,7 +78,36 @@ tm.simloglik_produce_globals!(theta₀d)
 tm.simloglik_produce!(llmd, ψmat, theta₀d, data)
 @test tm.simloglik_produce_globals!(theta₀d) == tm.simloglik_produce!(llmd, ψmat, theta₀d, data)
 
+# CachingPool(workers())
+
+tm.set_simloglik_produceglobals!(llmd, ψmat, data)
+
+@descend_code_warntype tm.simloglik_alloc_llm_map(theta₀d, NUNITS)
+typeof(llms)
+
+bigllm = Matrix{eltype(first(llms))}(undef, length(first(llms)), length(llms))
+for i in 1:NUNITS
+    bigllm[:, i] .= llms[i]
+end
+
+# pids = addprocs(Sys.CPU_THREADS)
+# @everywhere using Pkg: activate
+# @everywhere activate(joinpath(@__DIR__, ".."))
+# @everywhere using TestModule
+# @everywhere const tm = TestModule
+# llmd_dist = SharedMatrix{eltype(llmd)}(size(llmd); pids=pids)
+# @eval @everywhere tm.set_simloglik_produceglobals!($llmd_dist, $ψmat, $data)
+
+# cpool = CachingPool(pids)
+# @btime tm.simloglik_produce_pmap!($llmd_dist, $theta₀d, $cpool)
+# @btime tm.simloglik_produce!(llmd, ψmat, theta₀d, data)
+
+# tm.simloglik_produce_pmap!(llmd, theta₀d, CachingPool(pids))
+# tm.simloglik_produce_globals!(theta₀d)
+
 # @btime tm.simloglik_produce_globals!($theta₀d)
 # @btime tm.simloglik_produce!($llmd, $ψmat, $theta₀d, $data)
 
-
+# pids = start_up_workers(ENV; nprocs=8)
+# @everywhere using ShaleDrillingLikelihood
+# println_time_flush("Library loaded on workers")

@@ -8,6 +8,7 @@ using Optim.NLSolversBase.DiffResults: DiffResult
 using Optim.NLSolversBase: x_of_nans, alloc_DF
 
 const LLTag = Val{:loglik}()
+const DATATYPE = NamedTuple{(:y, :X, :ptr, :beta, :sigma, :alpha), Tuple{Vector{Float64}, Matrix{Float64}, Vector{Int64}, Vector{Float64}, Float64, Float64}}
 
 @noinline LLChunk(x::AbstractVector) = Chunk(length(x), length(x))
 
@@ -85,13 +86,15 @@ end
 # loglik
 # ----------------------------
 
+
 """
 update llmᵢ += logL( (y-xβ-αψ*ψ₂ᵢ)/σᵤ | ψ₂ᵢ )
 """
-@noinline function simloglik_produce!(llm::AbstractMatrix{T}, ψmat::AbstractMatrix, theta::AbstractVector{T}, data::NamedTuple, i::Int) where {T}
+@noinline function simloglik_produce!(llm::AbstractVector{T}, ψmat::AbstractMatrix, theta::AbstractVector{T}, data::NamedTuple, i::Int) where {T}
     
-    nsim, nunits = size(llm)
-    size(llm) == size(ψmat) || throw(DimensionMismatch())
+    (nsim, nunits) = size(ψmat)
+    nsim == size(llm,1) || throw(DimensionMismatch())
+    # size(llm) == size(ψmat) || throw(DimensionMismatch())
     length(data.ptr) == nunits+1 || throw(DimensionMismatch("data.ptr must have nunits+1 elements"))
 
     idx = getindices(data.ptr, i)
@@ -106,7 +109,6 @@ update llmᵢ += logL( (y-xβ-αψ*ψ₂ᵢ)/σᵤ | ψ₂ᵢ )
         x = view(data.X, :, idx)
         y = view(data.y,    idx)
         ψi = view(ψmat, :, i)
-        llmi = view(llm, :, i)
 
         v = muladd(x', -beta, y)
         vsum = reduce(+, v)
@@ -119,13 +121,32 @@ update llmᵢ += logL( (y-xβ-αψ*ψ₂ᵢ)/σᵤ | ψ₂ᵢ )
         f(ψi) = a + (b + c*ψi)*ψi
         
         for (m,ψim) in enumerate(ψi)
-            llmi[m] = f(ψim)
+            llm[m] = f(ψim)
         end
-        return nothing
+    else
+        fill!(llm, 0)
     end
 
     return nothing
 end
+
+"wrapper takes matrix of LLMs"
+function simloglik_produce!(llm::AbstractMatrix, ψmat::AbstractMatrix, theta::AbstractVector, data::NamedTuple, i::Int)
+    llmi = view(llm, :, i)
+    return simloglik_produce!(llmi, ψmat, theta, data, i)
+end
+
+"allocates llm vector & returns it"
+function simloglik_produce(ψmat::AbstractMatrix, theta::AbstractVector, data::NamedTuple, i::Int)
+    nsim = size(ψmat,1)
+    llm = Vector{eltype(theta)}(undef, nsim)
+    simloglik_produce!(llm, ψmat, theta, data, i)
+    return logsumexp(llm)
+end
+
+# ----------------------------
+# local wrappers
+# ----------------------------
 
 @noinline function simloglik_produce!(llm::AbstractMatrix, ψmat::AbstractMatrix, theta::AbstractVector, data::NamedTuple)
     nunits = length(data.ptr)-1
@@ -164,8 +185,64 @@ end
 
 function simloglik_produce_globals!(theta::AbstractVector)
     llm = get_GLLMat()
-    ψmat = get_GPsi()
-    data = get_GData()
+    ψmat = get_GPsi()::Matrix{Float64}
+    data = get_GData()::DATATYPE
     return simloglik_produce!(llm, ψmat, theta, data)
 end
 
+
+function simloglik_produce_pmap!(llm::AbstractMatrix, theta::AbstractVector, pool)
+    nunits = size(llm, 2)
+    fill!(llm, 0)
+    pmap((i) -> simloglik_worker(theta,i), pool, 1:nunits)
+    SLL = sum(logsumexp(llm,dims=1))
+    return -SLL
+end
+
+function simloglik_worker_allocllm(theta, i)
+    ψmat = get_GPsi()::Matrix{Float64}
+    data = get_GData()::DATATYPE
+    return simloglik_produce(ψmat, theta, data, i)
+end
+
+
+function simloglik_alloc_llm_map(theta,nunits)
+    slli = map(i -> simloglik_worker_allocllm(theta, i), 1:nunits)
+    return -sum(slli)
+end
+
+
+function simloglik_worker(theta,i)
+    llm = get_GLLMat()
+    ψmat = get_GPsi()::Matrix{Float64}
+    data = get_GData()
+    simloglik_produce!(llm, ψmat, theta, data, i)
+end
+
+"workers() but excluding master"
+getworkers() = filter(i -> i != 1, workers())
+
+function start_up_workers(ENV::Base.EnvDict; nprocs = Sys.CPU_THREADS)
+    # send primitives to workers
+    oldworkers = getworkers()
+    println_time_flush("removing workers $oldworkers")
+    rmprocs(oldworkers)
+    flush(stdout)
+    if "SLURM_JOBID" in keys(ENV)
+        num_cpus_to_request = parse(Int, ENV["SLURM_TASKS_PER_NODE"])
+        println("requesting $(num_cpus_to_request) cpus from slurm.")
+        flush(stdout)
+        pids = addprocs_slurm(num_cpus_to_request)
+    else
+        cputhrds = Sys.CPU_THREADS
+        cputhrds < nprocs && @warn "using nprocs = $cputhrds < $nprocs specified"
+        pids = addprocs(min(nprocs, cputhrds))
+    end
+    println_time_flush("Workers added: $pids")
+    return pids
+end
+
+function println_time_flush(str)
+    println(Dates.format(now(), "HH:MM:SS   ") * str)
+    flush(stdout)
+end
