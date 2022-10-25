@@ -20,12 +20,18 @@ computations.
 
 
 # this may be faster
+https://github.com/milankl/BitInformation.jl
 https://www.pbr-book.org/3ed-2018/Sampling_and_Reconstruction/The_Halton_Sampler#fragment-GeneraterandomdigitpermutationsforHaltonsampler-0
 https://hbfs.wordpress.com/2017/09/07/halton-sequences-generating-random-sequences-vii/
 https://stackoverflow.com/questions/29553133/cuda-generating-the-halton-sequence-in-parallel
 https://stackoverflow.com/questions/34242785/change-bit-state-in-julia
 https://stackoverflow.com/questions/746171/efficient-algorithm-for-bit-reversal-from-msb-lsb-to-lsb-msb-in-c
 https://discourse.julialang.org/t/uint8-access-bits/43990/9
+https://stackoverflow.com/questions/2602823/in-c-c-whats-the-simplest-way-to-reverse-the-order-of-bits-in-a-byte
+https://graphics.stanford.edu/~seander/bithacks.html#BitReverseObvious
+https://graphics.stanford.edu/courses/cs348b-18-spring-content/lectures/10_mc3/10_mc3_slides.pdf
+https://artowen.su.domains/mc/qmcstuff.pdf
+https://diginole.lib.fsu.edu/islandora/object/fsu:722493/datastream/PDF/view
 """
 struct HaltonSeq
     d::Vector{Int}
