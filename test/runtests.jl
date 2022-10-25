@@ -82,25 +82,23 @@ tm.simloglik_produce!(llmd, ψmat, theta₀d, data)
 
 tm.set_simloglik_produceglobals!(llmd, ψmat, data)
 
-@descend_code_warntype tm.simloglik_alloc_llm_map(theta₀d, NUNITS)
-typeof(llms)
+tm.simloglik_alloc_llm_map(theta₀d, NUNITS)
 
-bigllm = Matrix{eltype(first(llms))}(undef, length(first(llms)), length(llms))
-for i in 1:NUNITS
-    bigllm[:, i] .= llms[i]
-end
+pids = addprocs(Sys.CPU_THREADS)
+@everywhere using Pkg: activate
+@everywhere activate(joinpath(@__DIR__, ".."))
+@everywhere using TestModule
+@everywhere const tm = TestModule
+llmd_dist = SharedMatrix{eltype(llmd)}(size(llmd); pids=pids)
+@eval @everywhere tm.set_simloglik_produceglobals!($llmd_dist, $ψmat, $data)
 
-# pids = addprocs(Sys.CPU_THREADS)
-# @everywhere using Pkg: activate
-# @everywhere activate(joinpath(@__DIR__, ".."))
-# @everywhere using TestModule
-# @everywhere const tm = TestModule
-# llmd_dist = SharedMatrix{eltype(llmd)}(size(llmd); pids=pids)
-# @eval @everywhere tm.set_simloglik_produceglobals!($llmd_dist, $ψmat, $data)
+tm.simloglik_produce_pmap!(llmd_dist, theta₀d, wpool)  # 59-65ms
 
-# cpool = CachingPool(pids)
-# @btime tm.simloglik_produce_pmap!($llmd_dist, $theta₀d, $cpool)
-# @btime tm.simloglik_produce!(llmd, ψmat, theta₀d, data)
+cpool = CachingPool(pids)
+wpool = WorkerPool(pids)
+@btime tm.simloglik_produce_pmap!($llmd_dist, $theta₀d, $wpool)  # 59-65ms
+@btime tm.simloglik_produce!($llmd, $ψmat, $theta₀d, $data)      # 10ms
+@btime tm.simloglik_alloc_llm_pmap($theta₀d, $NUNITS, $wpool)    # 56-58ms
 
 # tm.simloglik_produce_pmap!(llmd, theta₀d, CachingPool(pids))
 # tm.simloglik_produce_globals!(theta₀d)

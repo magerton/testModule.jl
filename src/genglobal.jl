@@ -16,6 +16,10 @@ myglob2
 ```
 
 See <https://stackoverflow.com/questions/31313040/julia-automatically-generate-functions-and-export-them>
+
+
+TODO: do type annotation
+
 """
 macro GenGlobal(globalnames::Symbol...)
     e = quote end  # start out with a blank quoted expression

@@ -90,13 +90,7 @@ end
 """
 update llmᵢ += logL( (y-xβ-αψ*ψ₂ᵢ)/σᵤ | ψ₂ᵢ )
 """
-@noinline function simloglik_produce!(llm::AbstractVector{T}, ψmat::AbstractMatrix, theta::AbstractVector{T}, data::NamedTuple, i::Int) where {T}
-    
-    (nsim, nunits) = size(ψmat)
-    nsim == size(llm,1) || throw(DimensionMismatch())
-    # size(llm) == size(ψmat) || throw(DimensionMismatch())
-    length(data.ptr) == nunits+1 || throw(DimensionMismatch("data.ptr must have nunits+1 elements"))
-
+function simloglik_produce!(llm::AbstractVector{T}, theta::AbstractVector{T}, ψmat::AbstractMatrix, data::NamedTuple, i::Int) where {T}
     idx = getindices(data.ptr, i)
     n = length(idx)
 
@@ -127,45 +121,32 @@ update llmᵢ += logL( (y-xβ-αψ*ψ₂ᵢ)/σᵤ | ψ₂ᵢ )
         fill!(llm, 0)
     end
 
-    return nothing
-end
-
-"wrapper takes matrix of LLMs"
-function simloglik_produce!(llm::AbstractMatrix, ψmat::AbstractMatrix, theta::AbstractVector, data::NamedTuple, i::Int)
-    llmi = view(llm, :, i)
-    return simloglik_produce!(llmi, ψmat, theta, data, i)
-end
-
-"allocates llm vector & returns it"
-function simloglik_produce(ψmat::AbstractMatrix, theta::AbstractVector, data::NamedTuple, i::Int)
-    nsim = size(ψmat,1)
-    llm = Vector{eltype(theta)}(undef, nsim)
-    simloglik_produce!(llm, ψmat, theta, data, i)
     return logsumexp(llm)
 end
 
-# ----------------------------
-# local wrappers
-# ----------------------------
 
-@noinline function simloglik_produce!(llm::AbstractMatrix, ψmat::AbstractMatrix, theta::AbstractVector, data::NamedTuple)
-    nunits = length(data.ptr)-1
-    fill!(llm, 0)
-    for i in 1:nunits
-        simloglik_produce!(llm, ψmat, theta, data, i)
-    end
-    SLL = sum(logsumexp(llm,dims=1))
-    return -SLL
+function simloglik_produce(theta::AbstractVector, ψmat::AbstractMatrix, data::NamedTuple, i::Int)
+    nsim = size(ψmat, 1)
+    llm = Vector{eltype(theta)}(undef, nsim)
+    return simloglik_produce!(llm, theta, ψmat, data, i)
 end
 
-function simloglik_produce(theta, data; nsim=500)
-    nunits = length(data.ptr)-1
+# ----------------------------
+# for local estimation
+# ----------------------------
+
+function simloglik_produce(theta::AbstractVector, ψmat::AbstractMatrix, data::NamedTuple)
+    nsim, nunits = size(ψmat)
+    length(data.ptr) == nunits+1 || throw(DimensionMismatch("data.ptr must have nunits+1 elements"))
+
     T = eltype(theta)
-    llm = zeros(T, nsim, nunits)
-    ψmat = Matrix{Float64}(undef, nsim, nunits)
-    HaltonSeq!(ψmat, 2, 5000)
-    map!(norminvcdf, ψmat, ψmat)
-    return simloglik_produce!(llm, ψmat, theta, data)
+    sll = zero(T)
+    llm = Vector{T}(undef, nsim)
+    for i in OneTo(nunits)
+        sll -= simloglik_produce!(llm, theta, ψmat, data, i)
+    end
+    
+    return SLL
 end
 
 # ----------------------------
@@ -174,7 +155,6 @@ end
 
 @GenGlobal GData
 @GenGlobal GPsi
-@GenGlobal GLLMat
 
 function set_simloglik_produceglobals!(llm, ψmat, data)
     set_GData!(data)
@@ -210,6 +190,12 @@ function simloglik_alloc_llm_map(theta,nunits)
     slli = map(i -> simloglik_worker_allocllm(theta, i), 1:nunits)
     return -sum(slli)
 end
+
+function simloglik_alloc_llm_pmap(theta, nunits, pool)
+    slli = pmap(i -> simloglik_worker_allocllm(theta, i), pool, 1:nunits)
+    return -sum(slli)
+end
+
 
 
 function simloglik_worker(theta,i)
