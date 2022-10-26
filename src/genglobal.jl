@@ -21,44 +21,64 @@ See <https://stackoverflow.com/questions/31313040/julia-automatically-generate-f
 TODO: do type annotation
 
 """
-macro GenGlobal(globalnames::Symbol...)
+macro GenGlobal(varname::Symbol, T=false)
+
+    # println(isconcretetype(T))
+
     e = quote end  # start out with a blank quoted expression
-    for varname in globalnames
-        setname = Symbol("set_$(varname)!") # create function name
-        getname = Symbol("get_$(varname)") # create function name
+    setname = Symbol("set_$(varname)!") # create function name
+    getname = Symbol("get_$(varname)") # create function name
+    addtype = isconcretetype(eval(T))
+    if addtype
+        typeann = Symbol("::" * string(T))
+    else
+        typeann = nothing
+    end
 
-        # this next part creates another quoted expression, which are just the 2 statements
-        # we want to add for this function... the export call and the function definition
-        # note: wrap the variable in "esc" when you want to use a value from macro scope.
-        #       If you forget the esc, it will look for a variable named "maximumfilter" in the
-        #       calling scope, which will probably give an error (or worse, will be totally wrong
-        #       and reference the wrong thing)
-        blk = quote
-            # declare variable to be global w/in module
+    # this next part creates another quoted expression, which are just the 2 statements
+    # we want to add for this function... the export call and the function definition
+    # note: wrap the variable in "esc" when you want to use a value from macro scope.
+    #       If you forget the esc, it will look for a variable named "maximumfilter" in the
+    #       calling scope, which will probably give an error (or worse, will be totally wrong
+    #       and reference the wrong thing)
+    blk = quote
+        # declare variable to be global w/in module
+        global $(esc(varname))
+
+        # export set_ and get_
+        export $(esc(setname)), $(esc(getname))
+
+        # set
+        function $(esc(setname))(x)
             global $(esc(varname))
+            $(esc(varname)) = x
+            return nothing
+        end
+    end
 
-            # export set_ and get_
-            export $(esc(setname)), $(esc(getname))
-
-            # set
-            function $(esc(setname))(x)
-                global $(esc(varname))
-                $(esc(varname)) = x
-                return nothing
-            end
-
-            # get
+    # get
+    if addtype==true
+        blkget = quote
             function $(esc(getname))()
+                global $(esc(varname))
+                return $(esc(varname))::$(esc(T))
+            end
+        end
+    else
+        blkget = quote
+            function $(esc(getname))()
+                global $(esc(varname))
                 return $(esc(varname))
             end
         end
-
-        # an "Expr" object is just a tree... do "dump(e)" or "dump(blk)" to see it
-        # the "args" of the blk expression are the export and method definition... we can
-        # just append the vector to the end of the "e" args
-        append!(e.args, blk.args)
-        # append!(e.args, blk2.args)
     end
+
+    # an "Expr" object is just a tree... do "dump(e)" or "dump(blk)" to see it
+    # the "args" of the blk expression are the export and method definition... we can
+    # just append the vector to the end of the "e" args
+    append!(e.args, blk.args)
+    append!(e.args, blkget.args)
+    # append!(e.args, blk2.args)
 
     # macros return expression objects that get evaluated in the caller's scope
     e
