@@ -17,23 +17,17 @@ myglob2
 
 See <https://stackoverflow.com/questions/31313040/julia-automatically-generate-functions-and-export-them>
 
-
-TODO: do type annotation
-
 """
 macro GenGlobal(varname::Symbol, T=false)
 
     # println(isconcretetype(T))
 
     e = quote end  # start out with a blank quoted expression
+    
     setname = Symbol("set_$(varname)!") # create function name
     getname = Symbol("get_$(varname)") # create function name
     addtype = isconcretetype(eval(T))
-    if addtype
-        typeann = Symbol("::" * string(T))
-    else
-        typeann = nothing
-    end
+    TSet = addtype ? T : Any
 
     # this next part creates another quoted expression, which are just the 2 statements
     # we want to add for this function... the export call and the function definition
@@ -49,7 +43,7 @@ macro GenGlobal(varname::Symbol, T=false)
         export $(esc(setname)), $(esc(getname))
 
         # set
-        function $(esc(setname))(x)
+        function $(esc(setname))(x::$(esc(TSet)))
             global $(esc(varname))
             $(esc(varname)) = x
             return nothing
@@ -72,13 +66,12 @@ macro GenGlobal(varname::Symbol, T=false)
             end
         end
     end
-
+    
     # an "Expr" object is just a tree... do "dump(e)" or "dump(blk)" to see it
     # the "args" of the blk expression are the export and method definition... we can
     # just append the vector to the end of the "e" args
     append!(e.args, blk.args)
     append!(e.args, blkget.args)
-    # append!(e.args, blk2.args)
 
     # macros return expression objects that get evaluated in the caller's scope
     e
