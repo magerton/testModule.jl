@@ -155,6 +155,7 @@ end
 
 @GenGlobal GData
 @GenGlobal GPsi
+@GenGlobal LLM
 
 function set_simloglik_produceglobals!(llm, ψmat, data)
     set_GData!(data)
