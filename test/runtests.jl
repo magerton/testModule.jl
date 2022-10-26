@@ -43,16 +43,12 @@ SKIP = 5000
 
 data = tm.makedata(;nunits=NUNITS, maxobsperunit=8)
 theta₀ = vcat(data.beta, data.alpha, 1/data.sigma)
-tm.simloglik_produce(vcat(data.beta, data.alpha, 1000), data)
-tm.simloglik_produce(vcat(data.beta, data.alpha, 1), data)
-tm.simloglik_produce(vcat(data.beta, data.alpha, 0.01), data)
-
-llm = similar(theta₀, NSIM, NUNITS)
+llm = similar(theta₀, NSIM)
 ψmat = Matrix{Float64}(undef, NSIM, NUNITS)
 tm.HaltonSeq!(ψmat, BASE, SKIP)
 map!(norminvcdf, ψmat, ψmat)
 
-tm.simloglik_produce!(llm, ψmat, theta₀, data)
+tm.simloglik_produce!(llm, theta₀, ψmat, data)
 
 # Float64 Halton: 268.531 ms (445862 allocations: 12.94 MiB)
 # Rational Halton: 1.573 s (445413 allocations: 13.83 MiB)
@@ -65,47 +61,51 @@ ForwardDiff.seed!(theta₀d, theta₀, cfg.seeds)
 
 
 llmd = similar(llm, eltype(cfg))
-ff(θ) = tm.simloglik_produce!(llmd, ψmat, θ, data)
+ff(θ) = tm.simloglik_produce!(llmd, θ, ψmat, data)
 odfg = tm.LLOnceDifferentiable(ff, theta₀)
 
 tm.resetOnceDifferentiable!(odfg)
 res = optimize(odfg, theta₀, BFGS())
 hcat(res.minimizer, theta₀)
 
-
+# SET globals
 tm.set_simloglik_produceglobals!(llmd, ψmat, data)
+tm.set_simloglik_produceglobals_typed!(llmd, ψmat, data)
+
+# do with globals
 tm.simloglik_produce_globals!(theta₀d)
-tm.simloglik_produce!(llmd, ψmat, theta₀d, data)
-@test tm.simloglik_produce_globals!(theta₀d) == tm.simloglik_produce!(llmd, ψmat, theta₀d, data)
+tm.simloglik_produce_globals_typed!(theta₀d)
 
-# CachingPool(workers())
+# time these local versions
+tm.simloglik_produce!(llmd, theta₀d, ψmat, data)
+tm.simloglik_produce_globals!(theta₀d)
+tm.simloglik_produce_globals_typed!(theta₀d)
+tm.simloglik_map(theta₀d, NUNITS)
 
-tm.set_simloglik_produceglobals!(llmd, ψmat, data)
-
-tm.simloglik_alloc_llm_map(theta₀d, NUNITS)
-
+# parallel versions
+# --------------------
 pids = addprocs(Sys.CPU_THREADS)
 @everywhere using Pkg: activate
 @everywhere activate(joinpath(@__DIR__, ".."))
 @everywhere using TestModule
 @everywhere const tm = TestModule
-llmd_dist = SharedMatrix{eltype(llmd)}(size(llmd); pids=pids)
-@eval @everywhere tm.set_simloglik_produceglobals!($llmd_dist, $ψmat, $data)
 
-tm.simloglik_produce_pmap!(llmd_dist, theta₀d, wpool)  # 59-65ms
+@eval @everywhere tm.set_simloglik_produceglobals!($llmd, $ψmat, $data)
+@eval @everywhere tm.set_simloglik_produceglobals_typed!($llmd, $ψmat, $data)
 
 cpool = CachingPool(pids)
 wpool = WorkerPool(pids)
-@btime tm.simloglik_produce_pmap!($llmd_dist, $theta₀d, $wpool)  # 59-65ms
-@btime tm.simloglik_produce!($llmd, $ψmat, $theta₀d, $data)      # 10ms
-@btime tm.simloglik_alloc_llm_pmap($theta₀d, $NUNITS, $wpool)    # 56-58ms
+tm.simloglik_pmap(theta₀d, NUNITS, wpool)
+tm.simloglik_pmap_typed(theta₀d, NUNITS, wpool)
 
-# tm.simloglik_produce_pmap!(llmd, theta₀d, CachingPool(pids))
-# tm.simloglik_produce_globals!(theta₀d)
+# bg = BenchmarkGroup()
+# bg["local only"]          = @benchmarkable tm.simloglik_produce!($llmd, $theta₀d, $ψmat, $data)
+# bg["local globals"]       = @benchmarkable tm.simloglik_produce_globals!($theta₀d)
+# bg["local TYPED globals"] = @benchmarkable tm.simloglik_produce_globals_typed!($theta₀d)
+# bg["local globals (map)"] = @benchmarkable tm.simloglik_map($theta₀d, $NUNITS)
+# bg["pmap Wpool globals"]        = @benchmarkable tm.simloglik_pmap(      $theta₀d, $NUNITS, $wpool)
+# bg["pmap Wpool TYPED globals"]  = @benchmarkable tm.simloglik_pmap_typed($theta₀d, $NUNITS, $wpool)
+# bg["pmap Cpool globals"]        = @benchmarkable tm.simloglik_pmap(      $theta₀d, $NUNITS, $cpool)
+# bg["pmap Cpool TYPED globals"]  = @benchmarkable tm.simloglik_pmap_typed($theta₀d, $NUNITS, $cpool)
 
-# @btime tm.simloglik_produce_globals!($theta₀d)
-# @btime tm.simloglik_produce!($llmd, $ψmat, $theta₀d, $data)
-
-# pids = start_up_workers(ENV; nprocs=8)
-# @everywhere using ShaleDrillingLikelihood
-# println_time_flush("Library loaded on workers")
+# bgresults = run(bg, verbose=true)

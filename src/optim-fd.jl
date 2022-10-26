@@ -90,7 +90,7 @@ end
 """
 update llmᵢ += logL( (y-xβ-αψ*ψ₂ᵢ)/σᵤ | ψ₂ᵢ )
 """
-function simloglik_produce!(llm::AbstractVector{T}, theta::AbstractVector{T}, ψmat::AbstractMatrix, data::NamedTuple, i::Int) where {T}
+@noinline function simloglik_produce!(llm::AbstractVector{T}, theta::AbstractVector{T}, ψmat::AbstractMatrix, data::NamedTuple, i::Int) where {T}
     idx = getindices(data.ptr, i)
     n = length(idx)
 
@@ -124,29 +124,22 @@ function simloglik_produce!(llm::AbstractVector{T}, theta::AbstractVector{T}, ψ
     return logsumexp(llm)
 end
 
-
-function simloglik_produce(theta::AbstractVector, ψmat::AbstractMatrix, data::NamedTuple, i::Int)
-    nsim = size(ψmat, 1)
-    llm = Vector{eltype(theta)}(undef, nsim)
-    return simloglik_produce!(llm, theta, ψmat, data, i)
-end
-
 # ----------------------------
 # for local estimation
 # ----------------------------
 
-function simloglik_produce(theta::AbstractVector, ψmat::AbstractMatrix, data::NamedTuple)
+@noinline function simloglik_produce!(llm::AbstractVector, theta::AbstractVector, ψmat::AbstractMatrix, data::NamedTuple)
     nsim, nunits = size(ψmat)
     length(data.ptr) == nunits+1 || throw(DimensionMismatch("data.ptr must have nunits+1 elements"))
 
     T = eltype(theta)
     sll = zero(T)
-    llm = Vector{T}(undef, nsim)
+
     for i in OneTo(nunits)
         sll -= simloglik_produce!(llm, theta, ψmat, data, i)
     end
     
-    return SLL
+    return sll
 end
 
 # ----------------------------
@@ -155,56 +148,79 @@ end
 
 @GenGlobal GData
 @GenGlobal GPsi
-@GenGlobal LLM
+@GenGlobal GLLM
 
+@GenGlobal(GDataTyped, DATATYPE)
+@GenGlobal(GPsiFloat, Matrix{Float64})
+@GenGlobal(GLLMDual, Vector{FD.Dual{typeof(LLTag),Float64,5}})
+
+# set globals
+# ----------------------------
 function set_simloglik_produceglobals!(llm, ψmat, data)
     set_GData!(data)
-    set_GLLMat!(llm)
+    set_GLLM!(llm)
     set_GPsi!(ψmat)
     return nothing
 end
 
+function set_simloglik_produceglobals_typed!(llm, ψmat, data)
+    set_GDataTyped!(data)
+    set_GLLMDual!(llm)
+    set_GPsiFloat!(ψmat)
+    return nothing
+end
+
+# local with globals
+# ----------------------------
 function simloglik_produce_globals!(theta::AbstractVector)
-    llm = get_GLLMat()
-    ψmat = get_GPsi()::Matrix{Float64}
-    data = get_GData()::DATATYPE
-    return simloglik_produce!(llm, ψmat, theta, data)
+    llm = get_GLLM()
+    ψmat = get_GPsi()
+    data = get_GData()
+    return simloglik_produce!(llm, theta, ψmat, data)
 end
 
-
-function simloglik_produce_pmap!(llm::AbstractMatrix, theta::AbstractVector, pool)
-    nunits = size(llm, 2)
-    fill!(llm, 0)
-    pmap((i) -> simloglik_worker(theta,i), pool, 1:nunits)
-    SLL = sum(logsumexp(llm,dims=1))
-    return -SLL
+function simloglik_produce_globals_typed!(theta::AbstractVector)
+    llm = get_GLLMDual()
+    ψmat = get_GPsiFloat()
+    data = get_GDataTyped()
+    return simloglik_produce!(llm, theta, ψmat, data)
 end
 
-function simloglik_worker_allocllm(theta, i)
-    ψmat = get_GPsi()::Matrix{Float64}
-    data = get_GData()::DATATYPE
-    return simloglik_produce(ψmat, theta, data, i)
-end
-
-
-function simloglik_alloc_llm_map(theta,nunits)
-    slli = map(i -> simloglik_worker_allocllm(theta, i), 1:nunits)
-    return -sum(slli)
-end
-
-function simloglik_alloc_llm_pmap(theta, nunits, pool)
-    slli = pmap(i -> simloglik_worker_allocllm(theta, i), pool, 1:nunits)
-    return -sum(slli)
-end
-
-
+# inner fct for worker
+# ----------------------------
 
 function simloglik_worker(theta,i)
-    llm = get_GLLMat()
-    ψmat = get_GPsi()::Matrix{Float64}
+    llm = get_GLLM()
+    ψmat = get_GPsi()
     data = get_GData()
-    simloglik_produce!(llm, ψmat, theta, data, i)
+    simloglik_produce!(llm, theta, ψmat, data, i)
 end
+
+function simloglik_worker_typed(theta,i)
+    llm = get_GLLMDual()
+    ψmat = get_GPsiFloat()
+    data = get_GDataTyped()
+    simloglik_produce!(llm, theta, ψmat, data, i)
+end
+
+# outer fct for pmap
+# ----------------------------
+
+function simloglik_map(theta, nunits)
+    slli = map(i -> simloglik_worker(theta, i), 1:nunits)
+    return -sum(slli)
+end
+
+function simloglik_pmap(theta, nunits, pool)
+    slli = pmap(i -> simloglik_worker(theta, i), pool, 1:nunits)
+    return -sum(slli)
+end
+
+function simloglik_pmap_typed(theta, nunits, pool)
+    slli = pmap(i -> simloglik_worker_typed(theta, i), pool, 1:nunits)
+    return -sum(slli)
+end
+
 
 "workers() but excluding master"
 getworkers() = filter(i -> i != 1, workers())
