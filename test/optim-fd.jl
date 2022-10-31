@@ -1,7 +1,7 @@
 module TestOptimFD
 using Test
 using ForwardDiff
-using ForwardDiff: Dual, GradientConfig, Chunk, value
+using ForwardDiff: Dual, GradientConfig, Chunk, value, Partials
 using TestModule
 using Optim
 using StatsFuns: norminvcdf

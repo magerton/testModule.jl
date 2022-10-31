@@ -16,6 +16,7 @@ include("data-structure.jl")
 include("genglobal.jl")
 include("halton.jl")
 include("optim-fd.jl")
+include("partials.jl")
 
 
 end # module
