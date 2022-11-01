@@ -9,7 +9,7 @@ using StatsFuns
 using Distributed, SharedArrays, ClusterManagers
 
 const FD = ForwardDiff
-using ForwardDiff: Dual, GradientConfig, Chunk, value, gradient!
+using ForwardDiff: Dual, GradientConfig, Chunk, value, gradient!, Partials
 
 
 include("data-structure.jl")
